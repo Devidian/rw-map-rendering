@@ -1,0 +1,68 @@
+name: Docker Publish
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Derive version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          RAW_VERSION="${RELEASE_TAG#v}"
+          if [ -z "$RAW_VERSION" ]; then
+            RAW_VERSION="$INPUT_VERSION"
+          fi
+          if [ -z "$RAW_VERSION" ]; then
+            echo "Version could not be determined" >&2
+            exit 1
+          fi
+          MAJOR="$(echo "$RAW_VERSION" | cut -d. -f1)"
+          MINOR="$(echo "$RAW_VERSION" | cut -d. -f1-2)"
+          echo "version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+          echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            devidian/rw-map-rendering:${{ steps.version.outputs.version }}
+            devidian/rw-map-rendering:${{ steps.version.outputs.minor }}
+            devidian/rw-map-rendering:${{ steps.version.outputs.major }}
+            devidian/rw-map-rendering:latest

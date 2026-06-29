@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Activate stable Yarn
+        run: |
+          corepack enable
+          corepack yarn --version
+
+      - name: Install dependencies
+        run: corepack yarn install --immutable
+
+      - name: Build project
+        run: corepack yarn build
+
+      - name: Run tests with coverage
+        run: corepack yarn test:coverage --runInBand
+
+      - name: Build Docker image
+        run: docker build -t rw-map-rendering:ci .

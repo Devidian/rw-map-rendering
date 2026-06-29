@@ -1,0 +1,35 @@
+{
+  "name": "rw-map-rendering",
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "yarn@4.16.0",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "node --env-file=.env.local --trace-deprecation --import=./register.js src/index.ts",
+    "start": "node --env-file=.env.local dist/index.js",
+    "build": "tspc",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.cjs",
+    "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.cjs --coverage",
+    "prepare": "ts-patch install"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/node": "~24",
+    "@types/pngjs": "^6.0.5",
+    "@types/supertest": "^6.0.3",
+    "jest": "^30.2.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2",
+    "ts-patch": "^3.3.0",
+    "typescript": "~5.9.3",
+    "typia": "^11.0.3"
+  }
+}
