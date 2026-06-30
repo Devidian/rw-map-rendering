@@ -1,9 +1,22 @@
 import express from 'express';
 import type { RendererRuntime } from './service/render-runtime.js';
+import { defaultLogger } from './utils/logger.js';
 
 export function createApp(runtime?: Pick<RendererRuntime, 'status'>): express.Express {
   const app = express();
   app.use(express.json());
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+    res.once('finish', () => {
+      defaultLogger.debug('HTTP request completed:', {
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - startedAt,
+      });
+    });
+    next();
+  });
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, service: 'rw-map-rendering', runtime: runtime?.status() });
