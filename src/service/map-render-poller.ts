@@ -1,4 +1,5 @@
 import type { RenderServerConfig } from '../interfaces/render-server-config.js';
+import { defaultLogger } from '../utils/logger.js';
 import { serverIdFor } from '../utils/server-id.js';
 import type { BridgeMapSource } from './bridge-map-source.js';
 import type { MapSourceCacheStore } from './map-source-cache-store.js';
@@ -36,6 +37,13 @@ export class MapRenderPoller {
     if (response.nextChange !== null) {
       await this.state.setServerCursor(serverId, response.nextChange);
     }
+    defaultLogger.debug('Map render poll completed:', {
+      serverId,
+      baseUrl: server.baseUrl,
+      fetched: response.chunks.length,
+      rendered: response.chunks.length,
+      cursor: response.nextChange ?? current.cursor,
+    });
     return {
       serverId,
       fetched: response.chunks.length,
