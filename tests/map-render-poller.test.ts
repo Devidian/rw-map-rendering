@@ -26,6 +26,7 @@ describe('MapRenderPoller', () => {
     const rendered: MapSourceChunk[][] = [];
     const cursors: Array<[string, number]> = [];
     const published: string[] = [];
+    let cacheUsed = false;
     const poller = new MapRenderPoller(
       { fetchMapData: async () => ({ full: true, nextChange: 1000, chunks: [chunk] }) },
       { render: async (_serverId, _displayName, chunks) => { rendered.push(chunks); } },
@@ -33,7 +34,12 @@ describe('MapRenderPoller', () => {
         getServerState: async () => ({}),
         setServerCursor: async (serverId, cursor) => { cursors.push([serverId, cursor]); },
       },
-      undefined,
+      {
+        mergeChunks: async () => {
+          cacheUsed = true;
+          return [];
+        },
+      },
       { publishServer: async (serverId) => { published.push(serverId); } },
     );
 
@@ -46,6 +52,7 @@ describe('MapRenderPoller', () => {
     expect(rendered).toEqual([[chunk]]);
     expect(cursors).toEqual([[serverIdFor(server.ip, server.port), 1000]]);
     expect(published).toEqual([serverIdFor(server.ip, server.port)]);
+    expect(cacheUsed).toBe(false);
   });
 
   it('does not advance cursor when rendering fails', async () => {

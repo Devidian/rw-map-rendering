@@ -14,5 +14,7 @@ export interface BridgeMapResponseDto {
   schemaVersion?: unknown;
   full?: unknown;
   nextChange?: unknown;
+  partial?: unknown;
+  nextOffset?: unknown;
   chunks?: unknown;
 }

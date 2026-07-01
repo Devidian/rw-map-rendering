@@ -9,10 +9,14 @@ const HASH_PATTERN = /^[0-9a-f]{64}$/;
 export interface BridgeMapSourceResult {
   full: boolean;
   nextChange: number | null;
+  partial?: boolean;
+  nextOffset?: number;
   chunks: MapSourceChunk[];
 }
 
 export class InvalidBridgeMapResponseError extends Error {}
+
+const FULL_SYNC_PAGE_LIMIT = 1000;
 
 export class BridgeMapSource {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
@@ -21,8 +25,45 @@ export class BridgeMapSource {
     server: RenderServerConfig,
     lastChange?: number,
   ): Promise<BridgeMapSourceResult> {
+    if (lastChange === undefined) return this.fetchFullMapData(server);
+    return this.fetchMapDataPage(server, lastChange);
+  }
+
+  private async fetchFullMapData(server: RenderServerConfig): Promise<BridgeMapSourceResult> {
+    const chunks: MapSourceChunk[] = [];
+    let nextChange: number | null = null;
+    let offset = 0;
+
+    for (;;) {
+      const page = await this.fetchMapDataPage(server, undefined, {
+        limit: FULL_SYNC_PAGE_LIMIT,
+        offset,
+      });
+      chunks.push(...page.chunks);
+      if (page.nextChange !== null) nextChange = page.nextChange;
+      if (!page.partial) {
+        return {
+          full: true,
+          nextChange,
+          partial: false,
+          chunks,
+        };
+      }
+      offset = page.nextOffset ?? offset + FULL_SYNC_PAGE_LIMIT;
+    }
+  }
+
+  private async fetchMapDataPage(
+    server: RenderServerConfig,
+    lastChange?: number,
+    pagination?: { limit: number; offset: number },
+  ): Promise<BridgeMapSourceResult> {
     const url = new URL('/plugins/ozadminutils/map', `${server.baseUrl}/`);
     if (lastChange !== undefined) url.searchParams.set('lastChange', String(lastChange));
+    if (pagination) {
+      url.searchParams.set('limit', String(pagination.limit));
+      url.searchParams.set('offset', String(pagination.offset));
+    }
     const init = server.timeoutMs === undefined
       ? undefined
       : { signal: AbortSignal.timeout(server.timeoutMs) };
@@ -44,8 +85,17 @@ export function decodeBridgeMapResponse(value: unknown): BridgeMapSourceResult {
   return {
     full: dto.full,
     nextChange: dto.nextChange,
+    partial: dto.partial === true,
+    nextOffset: dto.nextOffset === undefined ? undefined : decodeNextOffset(dto.nextOffset),
     chunks: dto.chunks.map((chunk) => decodeChunk(chunk as BridgeMapChunkDto)),
   };
+}
+
+function decodeNextOffset(value: unknown): number {
+  if (!isNonNegativeInteger(value)) {
+    throw new InvalidBridgeMapResponseError('Invalid map response nextOffset');
+  }
+  return value;
 }
 
 function decodeChunk(value: BridgeMapChunkDto): MapSourceChunk {

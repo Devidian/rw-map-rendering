@@ -28,7 +28,7 @@ export class MapRenderPoller {
     const current = await this.state.getServerState(serverId);
     const response = await this.fetchWithRetry(server, current.cursor);
     if (response.chunks.length > 0) {
-      const snapshot = this.cache
+      const snapshot = !response.full && this.cache
         ? await this.cache.mergeChunks(serverId, response.chunks)
         : response.chunks;
       await this.renderer.render(serverId, server.name ?? serverId, snapshot);

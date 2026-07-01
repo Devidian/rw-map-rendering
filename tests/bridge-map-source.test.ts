@@ -26,6 +26,8 @@ describe('decodeBridgeMapResponse', () => {
     expect(result).toEqual({
       full: true,
       nextChange: 1000,
+      partial: false,
+      nextOffset: undefined,
       chunks: [
         expect.objectContaining({
           schemaVersion: 1,
@@ -76,5 +78,37 @@ describe('BridgeMapSource', () => {
       url: 'http://127.0.0.1:3000/plugins/ozadminutils/map?lastChange=1000',
       hasSignal: true,
     }]);
+  });
+
+  it('fetches initial full map data in pages', async () => {
+    const calls: string[] = [];
+    const source = new BridgeMapSource(async (url) => {
+      calls.push(url.toString());
+      const offset = new URL(url.toString()).searchParams.get('offset');
+      return new Response(JSON.stringify({
+        schemaVersion: 1,
+        full: true,
+        nextChange: offset === '0' ? 1000 : 1001,
+        partial: offset === '0',
+        ...(offset === '0' ? { nextOffset: 1000 } : {}),
+        chunks: [chunk()],
+      }), { status: 200 });
+    });
+
+    const result = await source.fetchMapData({
+      ip: '127.0.0.1',
+      port: 4255,
+      baseUrl: 'http://127.0.0.1:3000',
+    });
+
+    expect(result).toMatchObject({
+      full: true,
+      nextChange: 1001,
+      chunks: [expect.any(Object), expect.any(Object)],
+    });
+    expect(calls).toEqual([
+      'http://127.0.0.1:3000/plugins/ozadminutils/map?limit=1000&offset=0',
+      'http://127.0.0.1:3000/plugins/ozadminutils/map?limit=1000&offset=1000',
+    ]);
   });
 });
