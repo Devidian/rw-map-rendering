@@ -16,6 +16,17 @@ Tiles are written under:
 
 `server-id` is compatible with `rw-manager-backend`: `server-${sha256("<ip>:<port>").slice(0, 24)}`.
 
+Renderer state and source-cache files are stored below `<MAP_ROOT_DIR>/.state/`.
+The source cache is sharded by `256x256` chunk sectors and indexed by a compact
+`<server-id>.meta.json` file, so delta renders only load affected sector shards
+instead of one large full-world JSON file. Full-sync responses replace the
+server cache; delta responses update shards and render only affected native
+tiles.
+
+If rendered tiles were produced with an older cache version or already contain
+incorrect transparent chunks, delete that server's render cursor/source-cache
+state and let the renderer perform a full sync.
+
 ## Configuration
 
 | Variable | Default | Description |

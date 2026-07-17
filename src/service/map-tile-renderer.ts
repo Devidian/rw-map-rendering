@@ -19,7 +19,16 @@ export class MapTileRenderer {
     private readonly clock: () => number = Date.now,
   ) {}
 
-  async render(serverId: string, displayName: string, chunks: MapSourceChunk[]): Promise<void> {
+  async render(
+    serverId: string,
+    displayName: string,
+    chunks: MapSourceChunk[],
+    options: {
+      preserveMissingChunks?: boolean;
+      chunkBounds?: MapBounds;
+      tileBounds?: MapBounds;
+    } = {},
+  ): Promise<void> {
     if (chunks.length === 0) return;
     const chunksByCoordinate = new Map(
       chunks.map((chunk) => [coordinateKey(chunk.chunkX, chunk.chunkZ), chunk]),
@@ -33,7 +42,10 @@ export class MapTileRenderer {
     const serverRoot = path.join(this.tileRoot, serverId);
 
     for (const [tileX, tileZ] of nativeTiles) {
-      const image = transparentTile();
+      const existingImage = options.preserveMissingChunks
+        ? await readPng(tilePath(serverRoot, NATIVE_ZOOM, tileX, tileZ))
+        : null;
+      const image = existingImage ?? transparentTile();
       for (let offsetZ = 0; offsetZ < NATIVE_TILE_SIZE_CHUNKS; offsetZ += 1) {
         for (let offsetX = 0; offsetX < NATIVE_TILE_SIZE_CHUNKS; offsetX += 1) {
           const chunk = chunksByCoordinate.get(
@@ -58,7 +70,7 @@ export class MapTileRenderer {
       }
     }
 
-    await writeMetadata(serverRoot, serverId, displayName, chunks, this.clock());
+    await writeMetadata(serverRoot, serverId, displayName, chunks, this.clock(), options);
   }
 }
 
@@ -122,9 +134,10 @@ async function writeMetadata(
   displayName: string,
   chunks: MapSourceChunk[],
   updatedAtMs: number,
+  boundsOverride: { chunkBounds?: MapBounds; tileBounds?: MapBounds } = {},
 ): Promise<void> {
-  const chunkBounds = bounds(chunks.map((chunk) => [chunk.chunkX, chunk.chunkZ]));
-  const tileBounds = bounds(
+  const chunkBounds = boundsOverride.chunkBounds ?? bounds(chunks.map((chunk) => [chunk.chunkX, chunk.chunkZ]));
+  const tileBounds = boundsOverride.tileBounds ?? bounds(
     chunks.map((chunk) => [
       floorDiv(chunk.chunkX, NATIVE_TILE_SIZE_CHUNKS),
       floorDiv(chunk.chunkZ, NATIVE_TILE_SIZE_CHUNKS),

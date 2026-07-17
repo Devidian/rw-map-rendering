@@ -26,7 +26,7 @@ describe('MapRenderPoller', () => {
     const rendered: MapSourceChunk[][] = [];
     const cursors: Array<[string, number]> = [];
     const published: string[] = [];
-    let cacheUsed = false;
+    let cacheReplaced = false;
     const poller = new MapRenderPoller(
       { fetchMapData: async () => ({ full: true, nextChange: 1000, chunks: [chunk] }) },
       { render: async (_serverId, _displayName, chunks) => { rendered.push(chunks); } },
@@ -35,10 +35,16 @@ describe('MapRenderPoller', () => {
         setServerCursor: async (serverId, cursor) => { cursors.push([serverId, cursor]); },
       },
       {
-        mergeChunks: async () => {
-          cacheUsed = true;
-          return [];
+        replaceChunks: async (_serverId, chunks) => {
+          cacheReplaced = true;
+          return {
+            renderChunks: chunks,
+            chunkBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
+            tileBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
+            totalChunks: chunks.length,
+          };
         },
+        mergeChunks: async () => { throw new Error('unexpected merge'); },
       },
       { publishServer: async (serverId) => { published.push(serverId); } },
     );
@@ -52,7 +58,7 @@ describe('MapRenderPoller', () => {
     expect(rendered).toEqual([[chunk]]);
     expect(cursors).toEqual([[serverIdFor(server.ip, server.port), 1000]]);
     expect(published).toEqual([serverIdFor(server.ip, server.port)]);
-    expect(cacheUsed).toBe(false);
+    expect(cacheReplaced).toBe(true);
   });
 
   it('does not advance cursor when rendering fails', async () => {
@@ -81,7 +87,13 @@ describe('MapRenderPoller', () => {
         setServerCursor: async () => {},
       },
       {
-        mergeChunks: async () => [previous, chunk],
+        replaceChunks: async () => { throw new Error('unexpected replace'); },
+        mergeChunks: async () => ({
+          renderChunks: [previous, chunk],
+          chunkBounds: { minX: 0, minZ: 0, maxX: 1, maxZ: 0 },
+          tileBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
+          totalChunks: 2,
+        }),
       },
     );
 

@@ -2,7 +2,7 @@ import type { RenderServerConfig } from '../interfaces/render-server-config.js';
 import { defaultLogger } from '../utils/logger.js';
 import { serverIdFor } from '../utils/server-id.js';
 import type { BridgeMapSource } from './bridge-map-source.js';
-import type { MapSourceCacheStore } from './map-source-cache-store.js';
+import type { MapSourceCacheStore, MapSourceCacheMergeResult } from './map-source-cache-store.js';
 import type { MapTileRenderer } from './map-tile-renderer.js';
 import type { RenderStateStore } from './render-state-store.js';
 import type { RsyncPublisher } from './rsync-publisher.js';
@@ -19,7 +19,7 @@ export class MapRenderPoller {
     private readonly source: Pick<BridgeMapSource, 'fetchMapData'>,
     private readonly renderer: Pick<MapTileRenderer, 'render'>,
     private readonly state: Pick<RenderStateStore, 'getServerState' | 'setServerCursor'>,
-    private readonly cache?: Pick<MapSourceCacheStore, 'mergeChunks'>,
+    private readonly cache?: Pick<MapSourceCacheStore, 'mergeChunks' | 'replaceChunks'>,
     private readonly publisher?: Pick<RsyncPublisher, 'publishServer'>,
   ) {}
 
@@ -28,10 +28,17 @@ export class MapRenderPoller {
     const current = await this.state.getServerState(serverId);
     const response = await this.fetchWithRetry(server, current.cursor);
     if (response.chunks.length > 0) {
-      const snapshot = !response.full && this.cache
-        ? await this.cache.mergeChunks(serverId, response.chunks)
-        : response.chunks;
-      await this.renderer.render(serverId, server.name ?? serverId, snapshot);
+      const cacheResult: MapSourceCacheMergeResult | undefined = this.cache
+        ? response.full
+          ? await this.cache.replaceChunks(serverId, response.chunks)
+          : await this.cache.mergeChunks(serverId, response.chunks)
+        : undefined;
+      const renderChunks = cacheResult?.renderChunks ?? response.chunks;
+      await this.renderer.render(serverId, server.name ?? serverId, renderChunks, {
+        preserveMissingChunks: !response.full,
+        chunkBounds: cacheResult?.chunkBounds,
+        tileBounds: cacheResult?.tileBounds,
+      });
       await this.publisher?.publishServer(serverId);
     }
     if (response.nextChange !== null) {
