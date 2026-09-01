@@ -1,7 +1,7 @@
 import type { RenderServerConfig } from '../interfaces/render-server-config.js';
 import { AppConfig, resolveMapRoot } from '../utils/app-config.js';
 import { defaultLogger } from '../utils/logger.js';
-import { BridgeMapSource } from './bridge-map-source.js';
+import { NativeMapSource } from './native-map-source.js';
 import { MapRenderPoller } from './map-render-poller.js';
 import { MapSourceCacheStore, mapSourceCacheRoot } from './map-source-cache-store.js';
 import { MapTileRenderer } from './map-tile-renderer.js';
@@ -57,7 +57,7 @@ export function startRendererRuntime(): RendererRuntime {
   const runtime = new RendererRuntime(
     AppConfig.renderServers,
     new MapRenderPoller(
-      new BridgeMapSource(),
+      new NativeMapSource(),
       new MapTileRenderer(mapRoot),
       new RenderStateStore(renderStatePath(mapRoot)),
       new MapSourceCacheStore(mapSourceCacheRoot(mapRoot)),

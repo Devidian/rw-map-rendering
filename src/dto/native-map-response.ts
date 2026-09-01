@@ -1,4 +1,4 @@
-export interface BridgeMapChunkDto {
+export interface NativeMapChunkDto {
   schemaVersion: unknown;
   chunkX: unknown;
   chunkZ: unknown;
@@ -10,7 +10,7 @@ export interface BridgeMapChunkDto {
   region: unknown;
 }
 
-export interface BridgeMapResponseDto {
+export interface NativeMapResponseDto {
   schemaVersion?: unknown;
   full?: unknown;
   nextChange?: unknown;

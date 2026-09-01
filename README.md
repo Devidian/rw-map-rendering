@@ -2,10 +2,10 @@
 
 Standalone renderer for Rising World map tiles.
 
-The renderer polls one or more configured servers through the bridge/native route:
+The renderer polls one or more configured servers through Rising World's native Admin Utils route:
 
 ```text
-GET <baseUrl>/plugins/ozadminutils/map?lastChange=<cursor>
+GET <baseUrl>/plugins/oz---admin-utils/map?lastChange=<cursor>
 ```
 
 Tiles are written under:

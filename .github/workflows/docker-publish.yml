@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Derive version
         id: version
@@ -41,28 +41,34 @@ jobs:
           echo "version=$RAW_VERSION" >> "$GITHUB_OUTPUT"
           echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
           echo "minor=$MINOR" >> "$GITHUB_OUTPUT"
+          {
+            echo 'tags<<EOF'
+            echo "devidian/rw-map-rendering:$RAW_VERSION"
+            if [[ "$RAW_VERSION" != *-* ]]; then
+              echo "devidian/rw-map-rendering:$MINOR"
+              echo "devidian/rw-map-rendering:$MAJOR"
+              echo 'devidian/rw-map-rendering:latest'
+            fi
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            devidian/rw-map-rendering:${{ steps.version.outputs.version }}
-            devidian/rw-map-rendering:${{ steps.version.outputs.minor }}
-            devidian/rw-map-rendering:${{ steps.version.outputs.major }}
-            devidian/rw-map-rendering:latest
+          tags: ${{ steps.version.outputs.tags }}

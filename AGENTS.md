@@ -4,13 +4,13 @@
 
 This repository owns standalone Rising World map rendering.
 
-It polls configured plugin bridge or future native plugin routes, renders PNG map tiles, and writes them under `<map-root-dir>/<server-id>/...`.
+It polls configured native plugin routes, renders PNG map tiles, and writes them under `<map-root-dir>/<server-id>/...`.
 
 ## Ownership
 
 Owns:
 
-- map data polling from `/plugins/ozadminutils/map`
+- map data polling from `/plugins/oz---admin-utils/map`
 - map source DTO validation and decoding
 - PNG tile rendering
 - render cursor/state persistence

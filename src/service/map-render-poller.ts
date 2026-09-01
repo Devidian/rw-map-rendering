@@ -1,7 +1,7 @@
 import type { RenderServerConfig } from '../interfaces/render-server-config.js';
 import { defaultLogger } from '../utils/logger.js';
 import { serverIdFor } from '../utils/server-id.js';
-import type { BridgeMapSource } from './bridge-map-source.js';
+import type { NativeMapSource } from './native-map-source.js';
 import type { MapSourceCacheStore, MapSourceCacheMergeResult } from './map-source-cache-store.js';
 import type { MapTileRenderer } from './map-tile-renderer.js';
 import type { RenderStateStore } from './render-state-store.js';
@@ -16,7 +16,7 @@ export interface MapRenderPollResult {
 
 export class MapRenderPoller {
   constructor(
-    private readonly source: Pick<BridgeMapSource, 'fetchMapData'>,
+    private readonly source: Pick<NativeMapSource, 'fetchMapData'>,
     private readonly renderer: Pick<MapTileRenderer, 'render'>,
     private readonly state: Pick<RenderStateStore, 'getServerState' | 'setServerCursor'>,
     private readonly cache?: Pick<MapSourceCacheStore, 'mergeChunks' | 'replaceChunks'>,
