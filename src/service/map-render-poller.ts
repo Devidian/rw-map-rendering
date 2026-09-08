@@ -76,7 +76,6 @@ export class MapRenderPoller {
     cursor: number | undefined,
   ): Promise<MapRenderPollResult> {
     const cache = this.cache!;
-    const writeMetadata = this.renderer.writeMetadata!;
     const full = cursor === undefined;
     let fetched = 0;
     let streamResult: NativeMapStreamResult;
@@ -111,7 +110,7 @@ export class MapRenderPoller {
     if (full) {
       const cacheResult = await cache.finishFullSync!(serverId);
       if (fetched > 0) {
-        await writeMetadata(serverId, server.name ?? serverId, cacheResult);
+        await this.renderer.writeMetadata!(serverId, server.name ?? serverId, cacheResult);
         await this.publisher?.publishServer(serverId);
       }
     } else if (fetched > 0) {

@@ -107,6 +107,13 @@ describe('MapRenderPoller', () => {
     const appended: MapSourceChunk[][] = [];
     const rendered: MapSourceChunk[][] = [];
     const metadata: unknown[] = [];
+    const renderer = {
+      render: async (_serverId: string, _displayName: string, chunks: MapSourceChunk[]) => { rendered.push(chunks); },
+      async writeMetadata(_serverId: string, _displayName: string, bounds: unknown) {
+        if (this !== renderer) throw new Error('renderer context was lost');
+        metadata.push(bounds);
+      },
+    };
     const poller = new MapRenderPoller(
       {
         fetchMapData: async () => { throw new Error('streaming path expected'); },
@@ -116,10 +123,7 @@ describe('MapRenderPoller', () => {
           return { full: true, nextChange: 2000, fetched: 2 };
         },
       },
-      {
-        render: async (_serverId, _displayName, chunks) => { rendered.push(chunks); },
-        writeMetadata: async (_serverId, _displayName, bounds) => { metadata.push(bounds); },
-      },
+      renderer,
       {
         getServerState: async () => ({}),
         setServerCursor: async () => {},

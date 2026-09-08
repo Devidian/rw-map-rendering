@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.4] - 2026-09-08
+
+- fix: preserve the renderer instance while writing metadata after a streamed full map synchronization.
+
 ## [0.1.3] - 2026-09-08
 
 - fix: accept the `nextOffset: null` final-page marker emitted by Admin Utils map exports.
