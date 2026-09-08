@@ -27,6 +27,7 @@ export class MapTileRenderer {
       preserveMissingChunks?: boolean;
       chunkBounds?: MapBounds;
       tileBounds?: MapBounds;
+      writeMetadata?: boolean;
     } = {},
   ): Promise<void> {
     if (chunks.length === 0) return;
@@ -70,7 +71,17 @@ export class MapTileRenderer {
       }
     }
 
-    await writeMetadata(serverRoot, serverId, displayName, chunks, this.clock(), options);
+    if (options.writeMetadata !== false) {
+      await writeMetadata(serverRoot, serverId, displayName, chunks, this.clock(), options);
+    }
+  }
+
+  async writeMetadata(
+    serverId: string,
+    displayName: string,
+    bounds: { chunkBounds: MapBounds; tileBounds: MapBounds },
+  ): Promise<void> {
+    await writeMetadata(path.join(this.tileRoot, serverId), serverId, displayName, [], this.clock(), bounds);
   }
 }
 

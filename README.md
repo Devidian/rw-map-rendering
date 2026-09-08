@@ -8,6 +8,15 @@ The renderer polls one or more configured servers through Rising World's native 
 GET <baseUrl>/plugins/oz---admin-utils/map?lastChange=<cursor>
 ```
 
+Install an Admin Utils version supporting public terrain exports and enable
+`exposeMapData=true` in its world settings (the current default). Point `baseUrl`
+at the Rising World HTTP server, including its HTTP port. The renderer fetches
+terrain directly without a Manager backend, pairing or an Authorization header.
+`exposeMapData=false` makes the route return 404; other plugin routes remain
+subject to their own authentication. No player-position or server-config route
+is needed to render terrain. Ensure the game HTTP server is reachable from the
+renderer. To stop public terrain downloads, disable map exposure.
+
 Tiles are written under:
 
 ```text

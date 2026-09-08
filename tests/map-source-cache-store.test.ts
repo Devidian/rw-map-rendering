@@ -61,4 +61,19 @@ describe('MapSourceCacheStore', () => {
       expect.objectContaining({ chunkX: 0, contentHash: 'd'.repeat(64) }),
     ]);
   });
+
+  it('writes full-sync pages directly to shards before finalizing metadata', async () => {
+    const store = new MapSourceCacheStore(mkdtempSync(path.join(os.tmpdir(), 'rw-map-cache-')));
+
+    await store.beginFullSync('server-test');
+    await store.appendFullSyncPage('server-test', [chunk(0, 1000, 'a'.repeat(64))]);
+    await store.appendFullSyncPage('server-test', [chunk(300, 2000, 'b'.repeat(64))]);
+    const result = await store.finishFullSync('server-test');
+
+    expect(result).toEqual(expect.objectContaining({
+      totalChunks: 2,
+      chunkBounds: { minX: 0, minZ: 0, maxX: 300, maxZ: 0 },
+    }));
+    await expect(store.getChunks('server-test')).resolves.toHaveLength(2);
+  });
 });

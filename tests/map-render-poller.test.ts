@@ -1,5 +1,6 @@
 import type { MapSourceChunk } from '../src/interfaces/map-source-chunk.js';
 import { MapRenderPoller } from '../src/service/map-render-poller.js';
+import { MapExportBusyError } from '../src/service/native-map-source.js';
 import { serverIdFor } from '../src/utils/server-id.js';
 
 const server = {
@@ -102,6 +103,47 @@ describe('MapRenderPoller', () => {
     expect(rendered).toEqual([[previous, chunk]]);
   });
 
+  it('streams full-sync pages into the cache without a combined source array', async () => {
+    const appended: MapSourceChunk[][] = [];
+    const rendered: MapSourceChunk[][] = [];
+    const metadata: unknown[] = [];
+    const poller = new MapRenderPoller(
+      {
+        fetchMapData: async () => { throw new Error('streaming path expected'); },
+        streamMapData: async (_server, _cursor, consume) => {
+          await consume({ full: true, nextChange: 1000, partial: true, nextOffset: 100, chunks: [chunk] });
+          await consume({ full: true, nextChange: 2000, partial: false, chunks: [{ ...chunk, chunkX: 1 }] });
+          return { full: true, nextChange: 2000, fetched: 2 };
+        },
+      },
+      {
+        render: async (_serverId, _displayName, chunks) => { rendered.push(chunks); },
+        writeMetadata: async (_serverId, _displayName, bounds) => { metadata.push(bounds); },
+      },
+      {
+        getServerState: async () => ({}),
+        setServerCursor: async () => {},
+      },
+      {
+        beginFullSync: async () => {},
+        appendFullSyncPage: async (_serverId, chunks) => { appended.push(chunks); },
+        finishFullSync: async () => ({
+          chunkBounds: { minX: 0, minZ: 0, maxX: 1, maxZ: 0 },
+          tileBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
+          totalChunks: 2,
+        }),
+        abortFullSync: () => {},
+        replaceChunks: async () => { throw new Error('unexpected replace'); },
+        mergeChunks: async () => { throw new Error('unexpected merge'); },
+      },
+    );
+
+    await expect(poller.pollServer(server)).resolves.toEqual(expect.objectContaining({ fetched: 2, cursor: 2000 }));
+    expect(appended).toEqual([[chunk], [{ ...chunk, chunkX: 1 }]]);
+    expect(rendered).toEqual([[chunk], [{ ...chunk, chunkX: 1 }]]);
+    expect(metadata).toHaveLength(1);
+  });
+
   it('retries failed source fetches before rendering', async () => {
     let attempts = 0;
     const poller = new MapRenderPoller(
@@ -126,5 +168,28 @@ describe('MapRenderPoller', () => {
       cursor: undefined,
     });
     expect(attempts).toBe(2);
+  });
+
+  it('retries a busy map export without advancing the cursor', async () => {
+    let attempts = 0;
+    let cursorAdvanced = false;
+    const poller = new MapRenderPoller(
+      {
+        fetchMapData: async () => {
+          attempts += 1;
+          if (attempts === 1) throw new MapExportBusyError(0);
+          return { full: false, nextChange: null, chunks: [] };
+        },
+      },
+      { render: async () => {} },
+      {
+        getServerState: async () => ({ cursor: 500 }),
+        setServerCursor: async () => { cursorAdvanced = true; },
+      },
+    );
+
+    await poller.pollServer({ ...server, retryAttempts: 1 });
+    expect(attempts).toBe(2);
+    expect(cursorAdvanced).toBe(false);
   });
 });

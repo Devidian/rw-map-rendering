@@ -38,6 +38,8 @@ export interface MapSourceCacheMergeResult {
 }
 
 export class MapSourceCacheStore {
+  private readonly fullSyncs = new Map<string, FullSyncState>();
+
   constructor(private readonly cacheRoot: string) {}
 
   async getChunks(serverId: string): Promise<MapSourceChunk[]> {
@@ -60,6 +62,48 @@ export class MapSourceCacheStore {
     const meta = boundsFor(chunks);
     await this.writeMeta(serverId, meta);
     return { renderChunks: sortChunks(chunks), ...meta };
+  }
+
+  async beginFullSync(serverId: string): Promise<void> {
+    if (this.fullSyncs.has(serverId)) throw new Error(`Full sync is already active for ${serverId}`);
+    await mkdir(this.cacheRoot, { recursive: true });
+    await rm(this.serverShardRoot(serverId), { recursive: true, force: true });
+    this.fullSyncs.set(serverId, emptyFullSyncState());
+  }
+
+  async appendFullSyncPage(serverId: string, chunks: MapSourceChunk[]): Promise<void> {
+    const state = this.fullSyncs.get(serverId);
+    if (!state) throw new Error(`No active full sync for ${serverId}`);
+    const bySector = groupBy(chunks, sectorKey);
+    for (const [key, pageChunks] of bySector) {
+      const shardPath = this.shardPath(serverId, key);
+      const existing = await this.readShard(shardPath);
+      const merged = new Map(existing.map((chunk) => [chunkKey(chunk), chunk]));
+      for (const chunk of pageChunks) merged.set(chunkKey(chunk), chunk);
+      const sectorChunks = sortChunks([...merged.values()]);
+      await this.writeShard(shardPath, sectorChunks);
+    }
+    for (const chunk of chunks) {
+      state.totalChunks += 1;
+      extendBounds(state.chunkBounds, chunk.chunkX, chunk.chunkZ);
+      extendBounds(state.tileBounds, floorDiv(chunk.chunkX, NATIVE_TILE_SIZE_CHUNKS), floorDiv(chunk.chunkZ, NATIVE_TILE_SIZE_CHUNKS));
+    }
+  }
+
+  async finishFullSync(serverId: string): Promise<Omit<MapSourceCacheMergeResult, 'renderChunks'>> {
+    const state = this.fullSyncs.get(serverId);
+    if (!state) throw new Error(`No active full sync for ${serverId}`);
+    try {
+      const meta = fullSyncMeta(state);
+      await this.writeMeta(serverId, meta);
+      return meta;
+    } finally {
+      this.fullSyncs.delete(serverId);
+    }
+  }
+
+  abortFullSync(serverId: string): void {
+    this.fullSyncs.delete(serverId);
   }
 
   async mergeChunks(serverId: string, chunks: MapSourceChunk[]): Promise<MapSourceCacheMergeResult> {
@@ -194,6 +238,49 @@ export class MapSourceCacheStore {
     const [sectorX, sectorZ] = key.split(',');
     return path.join(this.serverShardRoot(serverId), sectorX, `${sectorZ}.json`);
   }
+}
+
+interface FullSyncState {
+  totalChunks: number;
+  chunkBounds: MutableBounds;
+  tileBounds: MutableBounds;
+}
+
+interface MutableBounds {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+function emptyFullSyncState(): FullSyncState {
+  return {
+    totalChunks: 0,
+    chunkBounds: { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity },
+    tileBounds: { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity },
+  };
+}
+
+function extendBounds(bounds: MutableBounds, x: number, z: number): void {
+  bounds.minX = Math.min(bounds.minX, x);
+  bounds.minZ = Math.min(bounds.minZ, z);
+  bounds.maxX = Math.max(bounds.maxX, x);
+  bounds.maxZ = Math.max(bounds.maxZ, z);
+}
+
+function fullSyncMeta(state: FullSyncState): Omit<MapSourceCacheMergeResult, 'renderChunks'> {
+  if (state.totalChunks === 0) {
+    return {
+      chunkBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
+      tileBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
+      totalChunks: 0,
+    };
+  }
+  return {
+    chunkBounds: state.chunkBounds,
+    tileBounds: state.tileBounds,
+    totalChunks: state.totalChunks,
+  };
 }
 
 export function mapSourceCacheRoot(mapRoot: string): string {

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.2] - 2026-09-08
+
+- fix: consume paged native map exports safely, serialize concurrent renderer requests, and write full-sync pages directly to the source cache.
+- docs: document direct public Admin Utils terrain-map access for standalone rendering.
+
 ## [0.1.1](https://github.com/Devidian/rw-map-rendering/compare/rw-map-rendering-v0.1.1...rw-map-rendering-v0.1.1) (2026-09-05)
 
 

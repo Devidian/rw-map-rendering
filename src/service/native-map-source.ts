@@ -5,7 +5,7 @@ import type { RenderServerConfig } from '../interfaces/render-server-config.js';
 const HEIGHT_BYTES = 4096;
 const TEXTURE_BYTES = 1024;
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
-const FULL_SYNC_PAGE_LIMIT = 1000;
+const FULL_SYNC_PAGE_LIMIT = 100;
 
 export interface NativeMapSourceResult {
   full: boolean;
@@ -15,26 +15,54 @@ export interface NativeMapSourceResult {
   chunks: MapSourceChunk[];
 }
 
+export interface NativeMapStreamResult {
+  full: boolean;
+  nextChange: number | null;
+  fetched: number;
+}
+
 export class InvalidNativeMapResponseError extends Error {}
+
+export class MapExportBusyError extends Error {
+  constructor(readonly retryAfterMs: number) {
+    super('Map export is busy');
+  }
+}
 
 /** Reads the Admin Utils map export through Rising World's native handler path. */
 export class NativeMapSource {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
 
   async fetchMapData(server: RenderServerConfig, lastChange?: number): Promise<NativeMapSourceResult> {
-    if (lastChange === undefined) return this.fetchFullMapData(server);
-    return this.fetchMapDataPage(server, lastChange);
+    const chunks: MapSourceChunk[] = [];
+    const result = await this.streamMapData(server, lastChange, async (page) => {
+      chunks.push(...page.chunks);
+    });
+    return { full: result.full, nextChange: result.nextChange, partial: false, chunks };
   }
 
-  private async fetchFullMapData(server: RenderServerConfig): Promise<NativeMapSourceResult> {
-    const chunks: MapSourceChunk[] = [];
+  async streamMapData(
+    server: RenderServerConfig,
+    lastChange: number | undefined,
+    consume: (page: NativeMapSourceResult) => Promise<void>,
+  ): Promise<NativeMapStreamResult> {
+    return this.fetchPagedMapData(server, lastChange, consume);
+  }
+
+  private async fetchPagedMapData(
+    server: RenderServerConfig,
+    lastChange?: number,
+    consume?: (page: NativeMapSourceResult) => Promise<void>,
+  ): Promise<NativeMapStreamResult> {
+    let fetched = 0;
     let nextChange: number | null = null;
     let offset = 0;
     for (;;) {
-      const page = await this.fetchMapDataPage(server, undefined, { limit: FULL_SYNC_PAGE_LIMIT, offset });
-      chunks.push(...page.chunks);
+      const page = await this.fetchMapDataPage(server, lastChange, { limit: FULL_SYNC_PAGE_LIMIT, offset });
+      fetched += page.chunks.length;
+      if (consume) await consume(page);
       if (page.nextChange !== null) nextChange = page.nextChange;
-      if (!page.partial) return { full: true, nextChange, partial: false, chunks };
+      if (!page.partial) return { full: lastChange === undefined, nextChange, fetched };
       offset = page.nextOffset ?? offset + FULL_SYNC_PAGE_LIMIT;
     }
   }
@@ -52,9 +80,15 @@ export class NativeMapSource {
     }
     const init = server.timeoutMs === undefined ? undefined : { signal: AbortSignal.timeout(server.timeoutMs) };
     const response = await this.fetchImpl(url, init);
+    if (response.status === 429) throw new MapExportBusyError(retryAfterMilliseconds(response.headers.get('Retry-After')));
     if (!response.ok) throw new Error(`Map source returned HTTP ${response.status}`);
     return decodeNativeMapResponse(await response.json());
   }
+}
+
+function retryAfterMilliseconds(value: string | null): number {
+  if (value === null || !/^\d+$/.test(value)) return 1000;
+  return Math.max(1000, Number(value) * 1000);
 }
 
 export function decodeNativeMapResponse(value: unknown): NativeMapSourceResult {

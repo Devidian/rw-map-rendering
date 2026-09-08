@@ -1,6 +1,7 @@
 import {
   decodeNativeMapResponse,
   InvalidNativeMapResponseError,
+  MapExportBusyError,
   NativeMapSource,
 } from '../src/service/native-map-source.js';
 
@@ -21,14 +22,41 @@ function chunk() {
 describe('NativeMapSource', () => {
   test('uses the game-derived Admin Utils handler path', async () => {
     const calls: string[] = [];
-    const source = new NativeMapSource(async (url) => {
+    const source = new NativeMapSource(async (url, init) => {
+      expect(init?.headers).toBeUndefined();
       calls.push(url.toString());
       return new Response(JSON.stringify({ schemaVersion: 1, full: false, nextChange: null, chunks: [] }));
     });
 
     await source.fetchMapData({ ip: '127.0.0.1', port: 4255, baseUrl: 'http://127.0.0.1:3000' }, 1000);
 
-    expect(calls).toEqual(['http://127.0.0.1:3000/plugins/oz---admin-utils/map?lastChange=1000']);
+    expect(calls).toEqual(['http://127.0.0.1:3000/plugins/oz---admin-utils/map?lastChange=1000&limit=100&offset=0']);
+  });
+
+  test('paginates delta exports before returning a cursor that may advance', async () => {
+    const calls: string[] = [];
+    const source = new NativeMapSource(async (url) => {
+      calls.push(url.toString());
+      const offset = new URL(url).searchParams.get('offset');
+      return new Response(JSON.stringify({
+        schemaVersion: 1,
+        full: false,
+        nextChange: offset === '0' ? 1000 : 2000,
+        partial: offset === '0',
+        nextOffset: offset === '0' ? 100 : undefined,
+        chunks: [chunk()],
+      }));
+    });
+
+    const result = await source.fetchMapData({ ip: '127.0.0.1', port: 4255, baseUrl: 'http://127.0.0.1:3000' }, 500);
+
+    expect(result.full).toBe(false);
+    expect(result.chunks).toHaveLength(2);
+    expect(result.nextChange).toBe(2000);
+    expect(calls).toEqual([
+      'http://127.0.0.1:3000/plugins/oz---admin-utils/map?lastChange=500&limit=100&offset=0',
+      'http://127.0.0.1:3000/plugins/oz---admin-utils/map?lastChange=500&limit=100&offset=100',
+    ]);
   });
 
   test('keeps map payload validation unchanged', () => {
@@ -40,5 +68,15 @@ describe('NativeMapSource', () => {
     }).chunks).toHaveLength(1);
     expect(() => decodeNativeMapResponse({ schemaVersion: 1, full: true, nextChange: 0, chunks: [{}] }))
       .toThrow(InvalidNativeMapResponseError);
+  });
+
+  test('uses the server retry delay while a map export is active', async () => {
+    const source = new NativeMapSource(async () => new Response('', {
+      status: 429,
+      headers: { 'Retry-After': '2' },
+    }));
+
+    await expect(source.fetchMapData({ ip: '127.0.0.1', port: 4255, baseUrl: 'http://127.0.0.1:3000' }))
+      .rejects.toEqual(expect.objectContaining<MapExportBusyError>({ retryAfterMs: 2000 }));
   });
 });
