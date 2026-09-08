@@ -1,6 +1,170 @@
 # RW Map Rendering
 
-Standalone renderer for Rising World map tiles.
+Standalone renderer for Rising World map tiles. It polls the native Admin Utils
+map route, writes PNG tiles and can publish them through any static web server.
+
+## Docker Hub quick start: HTTPS map host
+
+The following setup runs the published image and Caddy on a separate host. It
+does not require RW Manager: the renderer talks directly to the Rising World
+HTTP server and Caddy serves only the generated map files.
+
+### Prerequisites
+
+- Docker Engine with the Compose plugin.
+- A public DNS `A`/`AAAA` record such as `map.example.org` pointing to this
+  host. TCP ports 80 and 443 must reach this host and not be claimed by another
+  web server.
+- Outbound DNS and HTTPS access for the Caddy container so it can obtain a
+  Let's Encrypt certificate.
+- Network access from the renderer container to the Rising World HTTP server.
+- Admin Utils `0.10.2` or later. Enable `exposeMapData` for each world to be
+  rendered. This deliberately exposes terrain data to the renderer; do not
+  enable it on a server whose map must remain private.
+
+Create an empty directory and add these three files.
+
+`compose.yml`:
+
+```yaml
+services:
+  renderer:
+    image: devidian/rw-map-rendering:0.1.4
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      MAP_ROOT_DIR: /data
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-15000}
+      RENDER_SERVERS_JSON: ${RENDER_SERVERS_JSON:?Set RENDER_SERVERS_JSON in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # Useful when Docker cannot use the host's systemd-resolved stub.
+    dns:
+      - ${DNS_PRIMARY:-1.1.1.1}
+      - ${DNS_SECONDARY:-1.0.0.1}
+    volumes:
+      - map_tiles:/data
+
+  web:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      - renderer
+    environment:
+      MAP_HOSTNAME: ${MAP_HOSTNAME:?Set MAP_HOSTNAME in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+    dns:
+      - ${DNS_PRIMARY:-1.1.1.1}
+      - ${DNS_SECONDARY:-1.0.0.1}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - map_tiles:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+volumes:
+  map_tiles:
+  caddy_data:
+  caddy_config:
+```
+
+`.env`:
+
+```dotenv
+# This name must resolve to this Docker host before Caddy starts.
+MAP_HOSTNAME=map.example.org
+ACME_EMAIL=admin@example.org
+
+POLL_INTERVAL_MS=15000
+LOG_LEVEL=info
+
+# Change these when the host requires its own DNS resolvers.
+DNS_PRIMARY=1.1.1.1
+DNS_SECONDARY=1.0.0.1
+
+# Keep this JSON on one line. `ip` and `port` identify the server and become
+# its stable tile directory. `baseUrl` is the Rising World HTTP endpoint.
+RENDER_SERVERS_JSON=[{"ip":"203.0.113.10","port":4355,"baseUrl":"http://203.0.113.10:4354","name":"My Rising World server","timeoutMs":5000,"retryAttempts":2,"retryBackoffMs":1000}]
+```
+
+`Caddyfile`:
+
+```caddyfile
+{
+    email {$ACME_EMAIL}
+}
+
+{$MAP_HOSTNAME} {
+    # Keep renderer cache and cursors private.
+    @rendererState path /.state /.state/*
+    respond @rendererState 404
+
+    root * /srv
+    file_server {
+        precompressed gzip zstd
+    }
+}
+```
+
+Start and inspect the stack:
+
+```sh
+docker compose up -d
+docker compose logs -f renderer web
+docker compose ps
+```
+
+Caddy obtains and renews the TLS certificate automatically. If the log shows
+DNS failures while requesting the certificate, first verify that the Docker
+host has working DNS and outbound HTTPS; set `DNS_PRIMARY` and `DNS_SECONDARY`
+to resolvers reachable from that host if necessary.
+
+### Connect the rendered map
+
+The renderer creates `metadata.json` and tiles beneath a deterministic server
+directory. Calculate it from the exact `ip` and `port` in
+`RENDER_SERVERS_JSON` (not from `baseUrl`):
+
+```sh
+printf '203.0.113.10:4355' | sha256sum | cut -c1-24
+# prepend "server-" to the result
+```
+
+Then verify the published metadata:
+
+```sh
+curl -fsS https://map.example.org/<server-id>/metadata.json
+```
+
+To let RW Manager use a separately hosted renderer, set Admin Utils'
+`general.nativeMapUrl` for that world to the complete server-specific URL:
+
+```text
+https://map.example.org/<server-id>
+```
+
+The backend then requests `<mapUrl>/metadata.json` and uses the tile URL
+contained there. Consequently, the backend and tiles may be hosted on entirely
+different machines. Do not set `nativeMapUrl` to the generic host root when
+several worlds share the renderer.
+
+Run only one renderer instance per Rising World server. Multiple renderers
+polling the same source create redundant native-route traffic and race on their
+own render state.
+
+To stop the stack while retaining tiles and certificates:
+
+```sh
+docker compose down
+```
+
+Use `docker compose down -v` only when the rendered tiles and Caddy's ACME
+data should be discarded.
+
+## How it works
 
 The renderer polls one or more configured servers through Rising World's native Admin Utils route:
 
