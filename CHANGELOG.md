@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.3](https://github.com/Devidian/rw-map-rendering/compare/rw-map-rendering-v0.1.3...rw-map-rendering-v0.1.3) (2026-09-08)
+
+
+### Features
+
+* render maps from native plugin route ([542fff9](https://github.com/Devidian/rw-map-rendering/commit/542fff92bef2c5a6656eaec7276d7e3415502798))
+
+
+### Bug Fixes
+
+* accept null map page offset ([96ded03](https://github.com/Devidian/rw-map-rendering/commit/96ded034a180d8787d5964bde75a976086eab6b7))
+* derive component release version for Docker ([c7beb22](https://github.com/Devidian/rw-map-rendering/commit/c7beb2298d12cb2ca25c583f3e0e8970a44942ee))
+* persist sharded source cache safely ([232a50c](https://github.com/Devidian/rw-map-rendering/commit/232a50c7cc7e5f35d61f7a0269b0ce7b3ff3540e))
+* stream paged native map exports ([963ea02](https://github.com/Devidian/rw-map-rendering/commit/963ea027dd140596a1c9adb9cff9b4b2265a393a))
+
 ## [0.1.3] - 2026-09-08
 
 - fix: accept the `nextOffset: null` final-page marker emitted by Admin Utils map exports.
