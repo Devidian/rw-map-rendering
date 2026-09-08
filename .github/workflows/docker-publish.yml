@@ -28,7 +28,8 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          RAW_VERSION="${RELEASE_TAG#v}"
+          RAW_VERSION="${RELEASE_TAG#rw-map-rendering-v}"
+          RAW_VERSION="${RAW_VERSION#v}"
           if [ -z "$RAW_VERSION" ]; then
             RAW_VERSION="$INPUT_VERSION"
           fi
