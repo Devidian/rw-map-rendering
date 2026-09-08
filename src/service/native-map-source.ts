@@ -104,7 +104,7 @@ export function decodeNativeMapResponse(value: unknown): NativeMapSourceResult {
     full: dto.full,
     nextChange: dto.nextChange,
     partial: dto.partial === true,
-    nextOffset: dto.nextOffset === undefined ? undefined : decodeNextOffset(dto.nextOffset),
+    nextOffset: dto.nextOffset == null ? undefined : decodeNextOffset(dto.nextOffset),
     chunks: dto.chunks.map((chunk) => decodeChunk(chunk as NativeMapChunkDto)),
   };
 }

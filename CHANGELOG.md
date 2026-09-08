@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.3] - 2026-09-08
+
+- fix: accept the `nextOffset: null` final-page marker emitted by Admin Utils map exports.
+
 ## [0.1.2] - 2026-09-08
 
 - fix: consume paged native map exports safely, serialize concurrent renderer requests, and write full-sync pages directly to the source cache.

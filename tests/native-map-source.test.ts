@@ -70,6 +70,17 @@ describe('NativeMapSource', () => {
       .toThrow(InvalidNativeMapResponseError);
   });
 
+  test('accepts the null nextOffset emitted by Admin Utils on the final page', () => {
+    expect(decodeNativeMapResponse({
+      schemaVersion: 1,
+      full: true,
+      nextChange: 1000,
+      partial: false,
+      nextOffset: null,
+      chunks: [chunk()],
+    }).nextOffset).toBeUndefined();
+  });
+
   test('uses the server retry delay while a map export is active', async () => {
     const source = new NativeMapSource(async () => new Response('', {
       status: 429,
