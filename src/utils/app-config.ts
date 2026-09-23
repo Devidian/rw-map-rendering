@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { RenderServerConfig } from '../interfaces/render-server-config.js';
 
@@ -34,8 +35,9 @@ export class AppConfig {
   }
 
   static get renderServers(): RenderServerConfig[] {
-    const raw = process.env.RENDER_SERVERS_JSON?.trim() || '[]';
-    const parsed = JSON.parse(raw) as unknown;
+    const configFile = process.env.RENDER_SERVERS_CONFIG_FILE?.trim();
+    if (!configFile) throw new Error('RENDER_SERVERS_CONFIG_FILE must point to a server configuration JSON file');
+    const parsed = JSON.parse(readFileSync(configFile, 'utf8')) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.flatMap((entry) => parseServer(entry));
   }

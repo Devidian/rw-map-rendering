@@ -2,6 +2,7 @@ import {
   decodeNativeMapResponse,
   InvalidNativeMapResponseError,
   MapExportBusyError,
+  MapSourceNotFoundError,
   NativeMapSource,
 } from '../src/service/native-map-source.js';
 
@@ -89,5 +90,14 @@ describe('NativeMapSource', () => {
 
     await expect(source.fetchMapData({ ip: '127.0.0.1', port: 4255, baseUrl: 'http://127.0.0.1:3000' }))
       .rejects.toEqual(expect.objectContaining<MapExportBusyError>({ retryAfterMs: 2000 }));
+  });
+
+  test('reports the full missing source URL for a 404', async () => {
+    const source = new NativeMapSource(async () => new Response('', { status: 404 }));
+
+    await expect(source.fetchMapData({ ip: '127.0.0.1', port: 4255, baseUrl: 'http://127.0.0.1:3000' }))
+      .rejects.toEqual(expect.objectContaining<MapSourceNotFoundError>({
+        url: 'http://127.0.0.1:3000/plugins/oz---admin-utils/map?limit=100&offset=0',
+      }));
   });
 });

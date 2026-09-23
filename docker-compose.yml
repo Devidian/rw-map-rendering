@@ -10,9 +10,10 @@ services:
       PORT: 3000
       MAP_ROOT_DIR: ${MAP_ROOT_DIR:-/appdata/rw-map-rendering/tiles}
       POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-15000}
-      RENDER_SERVERS_JSON: ${RENDER_SERVERS_JSON:-[]}
+      RENDER_SERVERS_CONFIG_FILE: /app/config/server-config.json
       RSYNC_TARGET: ${RSYNC_TARGET:-}
       RSYNC_SSH_KEY_FILE: ${RSYNC_SSH_KEY_FILE:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
+      - ${RENDER_SERVERS_CONFIG_FILE:?Set RENDER_SERVERS_CONFIG_FILE in .env}:/app/config/server-config.json:ro
       - ${MAP_ROOT_DIR:-/appdata/rw-map-rendering/tiles}:${MAP_ROOT_DIR:-/appdata/rw-map-rendering/tiles}

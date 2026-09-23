@@ -29,6 +29,12 @@ export class MapExportBusyError extends Error {
   }
 }
 
+export class MapSourceNotFoundError extends Error {
+  constructor(readonly url: string) {
+    super(`Source url ${url} not found (404)`);
+  }
+}
+
 /** Reads the Admin Utils map export through Rising World's native handler path. */
 export class NativeMapSource {
   constructor(private readonly fetchImpl: typeof fetch = fetch) {}
@@ -81,6 +87,7 @@ export class NativeMapSource {
     const init = server.timeoutMs === undefined ? undefined : { signal: AbortSignal.timeout(server.timeoutMs) };
     const response = await this.fetchImpl(url, init);
     if (response.status === 429) throw new MapExportBusyError(retryAfterMilliseconds(response.headers.get('Retry-After')));
+    if (response.status === 404) throw new MapSourceNotFoundError(url.toString());
     if (!response.ok) throw new Error(`Map source returned HTTP ${response.status}`);
     return decodeNativeMapResponse(await response.json());
   }

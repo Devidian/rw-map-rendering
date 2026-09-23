@@ -1,7 +1,7 @@
 import type { RenderServerConfig } from '../interfaces/render-server-config.js';
 import { AppConfig, resolveMapRoot } from '../utils/app-config.js';
 import { defaultLogger } from '../utils/logger.js';
-import { NativeMapSource } from './native-map-source.js';
+import { MapSourceNotFoundError, NativeMapSource } from './native-map-source.js';
 import { MapRenderPoller } from './map-render-poller.js';
 import { MapSourceCacheStore, mapSourceCacheRoot } from './map-source-cache-store.js';
 import { MapTileRenderer } from './map-tile-renderer.js';
@@ -32,7 +32,9 @@ export class RendererRuntime {
       try {
         await Promise.all(this.servers.map((server) => this.poller.pollServer(server)));
       } catch (error) {
-        defaultLogger.error('Map render poll failed:', error);
+        const message = mapRenderPollErrorMessage(error);
+        if (message) defaultLogger.error(message);
+        else defaultLogger.error('Map render poll failed:', error);
       } finally {
         this.running = false;
         if (!this.stopped) this.timer = setTimeout(run, this.intervalMs);
@@ -50,6 +52,12 @@ export class RendererRuntime {
   status(): RendererRuntimeStatus {
     return { servers: this.servers.length, running: !this.stopped };
   }
+}
+
+export function mapRenderPollErrorMessage(error: unknown): string | undefined {
+  return error instanceof MapSourceNotFoundError
+    ? `Map render poll failed: Source url ${error.url} not found (404)`
+    : undefined;
 }
 
 export function startRendererRuntime(): RendererRuntime {
