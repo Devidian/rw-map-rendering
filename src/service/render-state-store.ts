@@ -1,5 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { defaultLogger } from '../utils/logger.js';
 
 interface StateFile {
   servers?: Record<string, ServerRenderState>;
@@ -10,6 +12,8 @@ export interface ServerRenderState {
 }
 
 export class RenderStateStore {
+  private writeQueue: Promise<void> = Promise.resolve();
+
   constructor(private readonly statePath: string) {}
 
   async getServerState(serverId: string): Promise<ServerRenderState> {
@@ -18,11 +22,14 @@ export class RenderStateStore {
   }
 
   async setServerCursor(serverId: string, cursor: number): Promise<void> {
-    const file = await this.read();
-    file.servers ??= {};
-    file.servers[serverId] = { ...file.servers[serverId], cursor };
-    await mkdir(path.dirname(this.statePath), { recursive: true });
-    await writeFile(this.statePath, `${JSON.stringify(file, null, 2)}\n`);
+    const write = this.writeQueue.then(async () => {
+      const file = await this.read();
+      file.servers ??= {};
+      file.servers[serverId] = { ...file.servers[serverId], cursor };
+      await this.write(file);
+    });
+    this.writeQueue = write.catch(() => undefined);
+    return write;
   }
 
   private async read(): Promise<StateFile> {
@@ -31,8 +38,19 @@ export class RenderStateStore {
       return parsed && typeof parsed === 'object' ? parsed as StateFile : {};
     } catch (error) {
       if (isMissing(error)) return {};
+      if (error instanceof SyntaxError) {
+        defaultLogger.warn(`Ignoring invalid render state at ${this.statePath}; it will be rebuilt`);
+        return {};
+      }
       throw error;
     }
+  }
+
+  private async write(file: StateFile): Promise<void> {
+    await mkdir(path.dirname(this.statePath), { recursive: true });
+    const temporaryPath = `${this.statePath}.${randomUUID()}.tmp`;
+    await writeFile(temporaryPath, `${JSON.stringify(file, null, 2)}\n`);
+    await rename(temporaryPath, this.statePath);
   }
 }
 
