@@ -3,6 +3,13 @@
 Standalone renderer for Rising World map tiles. It polls the native Admin Utils
 map route, writes PNG tiles and can publish them through any static web server.
 
+## Native host setup
+
+For a setup without Docker, use the platform-specific guides:
+
+- [Linux](docs/setup-linux.md)
+- [Windows](docs/setup-windows.md)
+
 ## Docker Hub quick start: HTTPS map host
 
 The following setup runs the published image and Caddy on a separate host. It
@@ -36,13 +43,14 @@ services:
       PORT: 3000
       MAP_ROOT_DIR: /data
       POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-15000}
-      RENDER_SERVERS_JSON: ${RENDER_SERVERS_JSON:?Set RENDER_SERVERS_JSON in .env}
+      RENDER_SERVERS_CONFIG_FILE: /app/config/server-config.json
       LOG_LEVEL: ${LOG_LEVEL:-info}
     # Useful when Docker cannot use the host's systemd-resolved stub.
     dns:
       - ${DNS_PRIMARY:-1.1.1.1}
       - ${DNS_SECONDARY:-1.0.0.1}
     volumes:
+      - ${RENDER_SERVERS_CONFIG_FILE:?Set RENDER_SERVERS_CONFIG_FILE in .env}:/app/config/server-config.json:ro
       - map_tiles:/data
 
   web:
@@ -61,6 +69,8 @@ services:
       - "443:443"
     volumes:
       - map_tiles:/srv:ro
+      # Transparent fallback served only for missing map tiles.
+      - ./empty.png:/srv/empty.png:ro
       - caddy_data:/data
       - caddy_config:/config
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -85,9 +95,31 @@ LOG_LEVEL=info
 DNS_PRIMARY=1.1.1.1
 DNS_SECONDARY=1.0.0.1
 
-# Keep this JSON on one line. `ip` and `port` identify the server and become
-# its stable tile directory. `baseUrl` is the Rising World HTTP endpoint.
-RENDER_SERVERS_JSON=[{"ip":"203.0.113.10","port":4355,"baseUrl":"http://203.0.113.10:4354","name":"My Rising World server","timeoutMs":5000,"retryAttempts":2,"retryBackoffMs":1000}]
+# Path to the JSON file next to this .env file. Compose mounts it read-only.
+RENDER_SERVERS_CONFIG_FILE=./server-config.json
+```
+
+`server-config.json` contains the server array. `ip` and `port` identify the
+stable tile directory; `baseUrl` is the Rising World HTTP endpoint:
+
+```json
+[
+  {
+    "ip": "203.0.113.10",
+    "port": 4355,
+    "baseUrl": "http://203.0.113.10:4354",
+    "name": "My Rising World server",
+    "timeoutMs": 5000,
+    "retryAttempts": 2,
+    "retryBackoffMs": 1000
+  }
+]
+```
+
+Create `empty.png` beside the Compose file. It must be a transparent 1×1 PNG:
+
+```sh
+printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL3NwAAAABJRU5ErkJggg==' | base64 -d > empty.png
 ```
 
 `Caddyfile`:
@@ -103,6 +135,24 @@ RENDER_SERVERS_JSON=[{"ip":"203.0.113.10","port":4355,"baseUrl":"http://203.0.11
     respond @rendererState 404
 
     root * /srv
+    # Preserve the file server's ETag and require conditional revalidation.
+    # RW Manager redraws only tiles around online players, avoiding timestamp
+    # query strings and full PNG transfers when a tile is unchanged.
+    header {
+        Cache-Control "no-cache"
+    }
+
+    # A map may legitimately not have rendered every requested Leaflet tile.
+    # Only missing server/zoom/x/z PNGs receive the transparent fallback;
+    # .state and every other missing path remain a real 404.
+    @mapTile path_regexp mapTile ^/[^/]+/[0-9]+/-?[0-9]+/-?[0-9]+\.png$
+    handle @mapTile {
+        try_files {path} /empty.png
+        file_server {
+            precompressed gzip zstd
+        }
+    }
+
     file_server {
         precompressed gzip zstd
     }
@@ -126,7 +176,7 @@ to resolvers reachable from that host if necessary.
 
 The renderer creates `metadata.json` and tiles beneath a deterministic server
 directory. Calculate it from the exact `ip` and `port` in
-`RENDER_SERVERS_JSON` (not from `baseUrl`):
+`server-config.json` (not from `baseUrl`):
 
 ```sh
 printf '203.0.113.10:4355' | sha256sum | cut -c1-24
@@ -208,7 +258,7 @@ state and let the renderer perform a full sync.
 | `HOST` | `0.0.0.0` | Health server host. |
 | `MAP_ROOT_DIR` | `/appdata/rw-map-rendering/tiles` | Rendered tile root. |
 | `POLL_INTERVAL_MS` | `15000` | Poll interval. |
-| `RENDER_SERVERS_JSON` | `[]` | JSON array of server configs. |
+| `RENDER_SERVERS_CONFIG_FILE` | required | Path to the server-config JSON file. In Docker Compose it is mounted read-only at `/app/config/server-config.json`. |
 | `RSYNC_TARGET` | empty | Optional rsync target for rendered tiles. |
 | `RSYNC_SSH_KEY_FILE` | empty | Optional SSH key file for SSH rsync targets. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`, or `off`. |
