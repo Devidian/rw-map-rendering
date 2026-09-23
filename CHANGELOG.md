@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.4](https://github.com/Devidian/rw-map-rendering/compare/rw-map-rendering-v0.1.4...rw-map-rendering-v0.1.4) (2026-09-23)
+
+
+### Features
+
+* load render servers from config file ([69ca76e](https://github.com/Devidian/rw-map-rendering/commit/69ca76e0a7265085690f8e72c23b7104f6794a48))
+
+
+### Bug Fixes
+
+* write renderer state atomically ([0719c11](https://github.com/Devidian/rw-map-rendering/commit/0719c11a483cb7480ba5fa58b7227770092e649e))
+
 ## [0.1.4] - 2026-09-08
 
 - fix: preserve the renderer instance while writing metadata after a streamed full map synchronization.
