@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- feat: poll optional Admin Utils satellite images and publish a separate satellite tile pyramid when data exists.
+
 ## [0.1.4] - 2026-09-08
 
 - fix: preserve the renderer instance while writing metadata after a streamed full map synchronization.

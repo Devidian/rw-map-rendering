@@ -3,6 +3,13 @@
 Standalone renderer for Rising World map tiles. It polls the native Admin Utils
 map route, writes PNG tiles and can publish them through any static web server.
 
+Experimental satellite images are polled through Admin Utils `sat-changes` and
+`sat-tile` when those routes exist. Images are scaled to the terrain map's
+128 pixels per chunk and stored under `<server-id>/satellite/`. `metadata.json`
+contains `satelliteTileUrl` only after the first satellite tile is rendered.
+The satellite cursor is independent of the terrain cursor. No satellite layer
+appears until a game API supplies images to Admin Utils.
+
 ## Native host setup
 
 For a setup without Docker, use the platform-specific guides:
@@ -145,7 +152,7 @@ printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwA
     # A map may legitimately not have rendered every requested Leaflet tile.
     # Only missing server/zoom/x/z PNGs receive the transparent fallback;
     # .state and every other missing path remain a real 404.
-    @mapTile path_regexp mapTile ^/[^/]+/[0-9]+/-?[0-9]+/-?[0-9]+\.png$
+    @mapTile path_regexp mapTile ^/[^/]+/(satellite/)?[0-9]+/-?[0-9]+/-?[0-9]+\.png$
     handle @mapTile {
         try_files {path} /empty.png
         file_server {

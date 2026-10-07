@@ -168,11 +168,22 @@ async function writeMetadata(
     generatedTileBounds: tileBounds,
     updatedAt: new Date(updatedAtMs).toISOString(),
     tileUrl: `/${serverId}/{z}/{x}/{y}.png`,
+    ...await satelliteMetadata(serverRoot, serverId),
   };
   await writeAtomic(
     path.join(serverRoot, 'metadata.json'),
     Buffer.from(`${JSON.stringify(metadata, null, 2)}\n`),
   );
+}
+
+async function satelliteMetadata(serverRoot: string, serverId: string): Promise<{ satelliteTileUrl?: string }> {
+  try {
+    await readFile(path.join(serverRoot, 'satellite', 'metadata.json'));
+    return { satelliteTileUrl: `/${serverId}/satellite/{z}/{x}/{y}.png` };
+  } catch (error) {
+    if (isMissing(error)) return {};
+    throw error;
+  }
 }
 
 function bounds(coordinates: Array<[number, number]>): MapBounds {

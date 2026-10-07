@@ -9,6 +9,7 @@ interface StateFile {
 
 export interface ServerRenderState {
   cursor?: number;
+  satelliteCursor?: number;
 }
 
 export class RenderStateStore {
@@ -22,10 +23,18 @@ export class RenderStateStore {
   }
 
   async setServerCursor(serverId: string, cursor: number): Promise<void> {
+    return this.setCursor(serverId, 'cursor', cursor);
+  }
+
+  async setSatelliteCursor(serverId: string, cursor: number): Promise<void> {
+    return this.setCursor(serverId, 'satelliteCursor', cursor);
+  }
+
+  private async setCursor(serverId: string, key: 'cursor' | 'satelliteCursor', cursor: number): Promise<void> {
     const write = this.writeQueue.then(async () => {
       const file = await this.read();
       file.servers ??= {};
-      file.servers[serverId] = { ...file.servers[serverId], cursor };
+      file.servers[serverId] = { ...file.servers[serverId], [key]: cursor };
       await this.write(file);
     });
     this.writeQueue = write.catch(() => undefined);

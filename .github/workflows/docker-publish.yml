@@ -1,6 +1,9 @@
 name: Docker Publish
 
 on:
+  push:
+    tags:
+      - 'v*-rc.*'
   release:
     types:
       - published
@@ -27,12 +30,11 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_VERSION: ${{ inputs.version }}
+          PUSH_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
-          RAW_VERSION="${RELEASE_TAG#rw-map-rendering-v}"
+          RAW_VERSION="${RELEASE_TAG:-${INPUT_VERSION:-$PUSH_TAG}}"
+          RAW_VERSION="${RAW_VERSION#rw-map-rendering-v}"
           RAW_VERSION="${RAW_VERSION#v}"
-          if [ -z "$RAW_VERSION" ]; then
-            RAW_VERSION="$INPUT_VERSION"
-          fi
           if [ -z "$RAW_VERSION" ]; then
             echo "Version could not be determined" >&2
             exit 1

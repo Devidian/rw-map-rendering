@@ -7,6 +7,9 @@ import { MapSourceCacheStore, mapSourceCacheRoot } from './map-source-cache-stor
 import { MapTileRenderer } from './map-tile-renderer.js';
 import { RenderStateStore, renderStatePath } from './render-state-store.js';
 import { RsyncPublisher } from './rsync-publisher.js';
+import { NativeSatelliteSource } from './native-satellite-source.js';
+import { SatelliteTileRenderer } from './satellite-tile-renderer.js';
+import { SatelliteRenderPoller } from './satellite-render-poller.js';
 
 export interface RendererRuntimeStatus {
   servers: number;
@@ -22,6 +25,7 @@ export class RendererRuntime {
     private readonly servers: RenderServerConfig[],
     private readonly poller: Pick<MapRenderPoller, 'pollServer'>,
     private readonly intervalMs: number = AppConfig.pollIntervalMs,
+    private readonly satellitePoller?: Pick<SatelliteRenderPoller, 'pollServer'>,
   ) {}
 
   start(): void {
@@ -30,7 +34,14 @@ export class RendererRuntime {
       if (this.running) return;
       this.running = true;
       try {
-        await Promise.all(this.servers.map((server) => this.poller.pollServer(server)));
+        await Promise.all(this.servers.map(async (server) => {
+          try { await this.poller.pollServer(server); }
+          catch (error) { defaultLogger.error('Map render poll failed:', error); }
+          if (this.satellitePoller) {
+            try { await this.satellitePoller.pollServer(server); }
+            catch (error) { defaultLogger.error('Satellite render poll failed:', error); }
+          }
+        }));
       } catch (error) {
         const message = mapRenderPollErrorMessage(error);
         if (message) defaultLogger.error(message);
@@ -62,18 +73,22 @@ export function mapRenderPollErrorMessage(error: unknown): string | undefined {
 
 export function startRendererRuntime(): RendererRuntime {
   const mapRoot = resolveMapRoot();
+  const state = new RenderStateStore(renderStatePath(mapRoot));
+  const publisher = new RsyncPublisher(mapRoot, {
+    target: AppConfig.rsyncTarget,
+    sshKeyFile: AppConfig.rsyncSshKeyFile,
+  });
   const runtime = new RendererRuntime(
     AppConfig.renderServers,
     new MapRenderPoller(
       new NativeMapSource(),
       new MapTileRenderer(mapRoot),
-      new RenderStateStore(renderStatePath(mapRoot)),
+      state,
       new MapSourceCacheStore(mapSourceCacheRoot(mapRoot)),
-      new RsyncPublisher(mapRoot, {
-        target: AppConfig.rsyncTarget,
-        sshKeyFile: AppConfig.rsyncSshKeyFile,
-      }),
+      publisher,
     ),
+    AppConfig.pollIntervalMs,
+    new SatelliteRenderPoller(new NativeSatelliteSource(), new SatelliteTileRenderer(mapRoot), state, publisher),
   );
   runtime.start();
   return runtime;
