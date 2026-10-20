@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.1.6](https://github.com/Devidian/rw-map-rendering/compare/rw-map-rendering-v0.1.5...rw-map-rendering-v0.1.6) (2026-10-20)
+
+
+### Bug Fixes
+
+* keep image release successful when description update is forbidden ([1701814](https://github.com/Devidian/rw-map-rendering/commit/17018147f2014668a46743ceddcc82ffbea804fc))
+
 ## [0.1.5] - 2026-10-20
 
 - feat: poll optional Admin Utils satellite images and publish a separate satellite tile pyramid when data exists.
