@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { RenderServerConfig } from '../interfaces/render-server-config.js';
 import { AppConfig, resolveMapRoot } from '../utils/app-config.js';
 import { defaultLogger } from '../utils/logger.js';
@@ -11,6 +12,9 @@ import { NativeSatelliteSource } from './native-satellite-source.js';
 import { SatelliteTileRenderer } from './satellite-tile-renderer.js';
 import { SatelliteRenderPoller } from './satellite-render-poller.js';
 import { SftpPublisher } from './sftp-publisher.js';
+import { ArchiveTileStore } from './archive-tile-store.js';
+import { ArchivePublisher } from './archive-publisher.js';
+import type { TilePublisher } from '../interfaces/tile-publisher.js';
 import { serverIdFor } from '../utils/server-id.js';
 
 export interface RendererRuntimeStatus {
@@ -28,7 +32,7 @@ export class RendererRuntime {
     private readonly poller: Pick<MapRenderPoller, 'pollServer'>,
     private readonly intervalMs: number = AppConfig.pollIntervalMs,
     private readonly satellitePoller?: Pick<SatelliteRenderPoller, 'pollServer'>,
-    private readonly publisher?: Pick<SftpPublisher, 'start' | 'stop'>,
+    private readonly publisher?: { start(serverIds: string[]): void; stop(): void },
   ) {}
 
   start(): void {
@@ -79,22 +83,28 @@ export function mapRenderPollErrorMessage(error: unknown): string | undefined {
 export function startRendererRuntime(): RendererRuntime {
   const mapRoot = resolveMapRoot();
   const state = new RenderStateStore(renderStatePath(mapRoot));
-  const rsyncPublisher = new RsyncPublisher(mapRoot, {
+  const mode = AppConfig.publishMode;
+  const publicationRoot = mode === 'archive' ? path.resolve(AppConfig.archiveRootDir) : mapRoot;
+  const rsyncPublisher = new RsyncPublisher(publicationRoot, {
     target: AppConfig.rsyncTarget,
     sshKeyFile: AppConfig.rsyncSshKeyFile,
-  });
-  const sftpPublisher = AppConfig.sftpTarget ? new SftpPublisher(mapRoot, {
+  }, undefined, mode === 'raw');
+  const sftpPublisher = AppConfig.sftpTarget ? new SftpPublisher(publicationRoot, {
     target: AppConfig.sftpTarget,
     configFile: AppConfig.sftpConfigFile,
     idleSyncMs: AppConfig.sftpIdleSyncMs,
     fullSyncMs: AppConfig.sftpFullSyncMs,
-  }) : undefined;
-  const publisher = {
+  }, undefined, mode === 'archive') : undefined;
+  const rawPublisher: TilePublisher = {
     publishServer: async (serverId: string, changedFiles?: string[]): Promise<void> => {
       await rsyncPublisher.publishServer(serverId);
       await sftpPublisher?.publishServer(serverId, changedFiles);
     },
   };
+  const archivePublisher = mode === 'archive' && (AppConfig.rsyncTarget || AppConfig.sftpTarget)
+    ? new ArchivePublisher(new ArchiveTileStore(mapRoot, publicationRoot), rsyncPublisher, sftpPublisher)
+    : undefined;
+  const publisher = archivePublisher ?? rawPublisher;
   const runtime = new RendererRuntime(
     AppConfig.renderServers,
     new MapRenderPoller(
@@ -106,7 +116,7 @@ export function startRendererRuntime(): RendererRuntime {
     ),
     AppConfig.pollIntervalMs,
     new SatelliteRenderPoller(new NativeSatelliteSource(), new SatelliteTileRenderer(mapRoot), state, publisher),
-    sftpPublisher,
+    archivePublisher ?? sftpPublisher,
   );
   runtime.start();
   return runtime;

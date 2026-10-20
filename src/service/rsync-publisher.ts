@@ -9,11 +9,13 @@ export class RsyncPublisher {
     private readonly mapRoot: string,
     private readonly config: RsyncConfig,
     private readonly runner: CommandRunner = spawnCommand,
+    private readonly deleteStale = true,
   ) {}
 
   async publishServer(serverId: string): Promise<void> {
     if (!this.config.target) return;
-    const args = ['-a', '--delete'];
+    const args = ['-a'];
+    if (this.deleteStale) args.push('--delete');
     if (this.config.sshKeyFile && isSshTarget(this.config.target)) {
       args.push('-e', `ssh -i ${this.config.sshKeyFile}`);
     }

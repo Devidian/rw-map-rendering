@@ -34,6 +34,14 @@ describe('RsyncPublisher', () => {
       ],
     ]]);
   });
+
+  it('preserves web-root files in archive mode', async () => {
+    const calls: string[][] = [];
+    const publisher = new RsyncPublisher('/archives', { target: '/var/www/maps/' },
+      async (_command, args) => { calls.push(args); }, false);
+    await publisher.publishServer('server-test');
+    expect(calls).toEqual([['-a', '/archives/server-test/', '/var/www/maps/']]);
+  });
 });
 
 describe('isSshTarget', () => {

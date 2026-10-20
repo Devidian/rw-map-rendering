@@ -55,6 +55,18 @@ describe('AppConfig', () => {
 
     expect(() => AppConfig.renderServers).toThrow('RENDER_SERVERS_CONFIG_FILE');
   });
+
+  it('defaults to raw publication and stores archives on the tile volume', () => {
+    delete process.env.PUBLISH_MODE;
+    delete process.env.ARCHIVE_ROOT_DIR;
+    process.env.MAP_ROOT_DIR = '/maps/tiles';
+    expect(AppConfig.publishMode).toBe('raw');
+    expect(AppConfig.archiveRootDir).toBe('/maps/tiles/.archives');
+    process.env.PUBLISH_MODE = 'archive';
+    expect(AppConfig.publishMode).toBe('archive');
+    process.env.PUBLISH_MODE = 'other';
+    expect(() => AppConfig.publishMode).toThrow('PUBLISH_MODE');
+  });
 });
 
 function writeServerConfig(value: unknown): string {

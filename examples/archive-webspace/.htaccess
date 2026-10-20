@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteRule ^(server-[a-f0-9]{24})/satellite/(-?[0-9]{1,15})/(-?[0-9]{1,15})/(-?[0-9]{1,15})\.png$ archive-tile.php?s=$1&layer=satellite&z=$2&x=$3&y=$4 [L]
+RewriteRule ^(server-[a-f0-9]{24})/(-?[0-9]{1,15})/(-?[0-9]{1,15})/(-?[0-9]{1,15})\.png$ archive-tile.php?s=$1&layer=terrain&z=$2&x=$3&y=$4 [L]

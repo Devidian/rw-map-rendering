@@ -15,6 +15,7 @@ export class SftpPublisher implements TilePublisher {
     private readonly mapRoot: string,
     private readonly config: SftpConfig,
     private readonly runner: CommandRunner = spawnCommand,
+    private readonly archiveMode = false,
   ) {
     const targetPath = /^[a-zA-Z0-9_-]+:(.*)$/.exec(config.target)?.[1];
     if (targetPath === undefined || targetPath === '/'
@@ -50,6 +51,7 @@ export class SftpPublisher implements TilePublisher {
     if (changedFiles?.some((file) => !isSafeRelativePath(file))) {
       throw new Error('Invalid relative tile path');
     }
+    if (this.archiveMode && changedFiles === undefined) return this.syncServer(serverId);
     if (this.config.idleSyncMs > 0) {
       const oldTimer = this.idleTimers.get(serverId);
       if (oldTimer) clearTimeout(oldTimer);
@@ -71,7 +73,12 @@ export class SftpPublisher implements TilePublisher {
       try {
         const manifest = path.join(temporaryDir, 'files.txt');
         await writeFile(manifest, `${[...new Set(changedFiles)].join('\n')}\n`, { mode: 0o600 });
-        await this.run('copy', serverId, ['--no-traverse', '--files-from', manifest]);
+        if (this.archiveMode) {
+          await this.run('copy', serverId, ['--no-traverse', '--no-check-dest', '--files-from', manifest], true);
+          await this.promote(serverId, ['--no-traverse', '--files-from', manifest]);
+        } else {
+          await this.run('copy', serverId, ['--no-traverse', '--files-from', manifest]);
+        }
       } finally {
         await rm(temporaryDir, { recursive: true, force: true });
       }
@@ -87,18 +94,51 @@ export class SftpPublisher implements TilePublisher {
         || metadata.serverId !== serverId) {
         throw new Error(`Invalid map metadata for ${serverId}; SFTP sync refused`);
       }
-      await this.run('sync', serverId);
+      if (this.archiveMode) {
+        await this.clearStage(serverId);
+        await this.run('sync', serverId,
+          ['--compare-dest', this.remotePath(serverId, false), '--size-only'], true);
+        await this.promote(serverId);
+      } else {
+        await this.run('sync', serverId);
+      }
     });
   }
 
-  private run(mode: 'copy' | 'sync', serverId: string, extra: string[] = []): Promise<void> {
-    const base = this.config.target.replace(/\/+$/, '');
-    const target = `${base}${base.endsWith(':') ? '' : '/'}${serverId}`;
+  private run(mode: 'copy' | 'sync', serverId: string, extra: string[] = [], staging = false): Promise<void> {
     return this.runner('rclone', [
       '--config', this.config.configFile,
-      mode, '--transfers', '2', '--checkers', '2', ...extra,
-      path.join(this.mapRoot, serverId), target,
+      mode, '--transfers', this.archiveMode ? '1' : '2', '--checkers', this.archiveMode ? '1' : '2',
+      ...(this.archiveMode ? ['--sftp-set-modtime=false'] : []), ...extra,
+      path.join(this.mapRoot, serverId), this.remotePath(serverId, staging),
     ]);
+  }
+
+  private promote(serverId: string, extra: string[] = []): Promise<void> {
+    return this.runner('rclone', [
+      '--config', this.config.configFile,
+      'move', '--transfers', '1', '--checkers', '1', '--ignore-times', ...extra,
+      this.remotePath(serverId, true), this.remotePath(serverId, false),
+    ]);
+  }
+
+  private async clearStage(serverId: string): Promise<void> {
+    const empty = await mkdtemp(path.join(os.tmpdir(), 'rw-map-sftp-empty-'));
+    try {
+      await this.runner('rclone', [
+        '--config', this.config.configFile,
+        'sync', '--transfers', '1', '--checkers', '1',
+        empty, this.remotePath(serverId, true),
+      ]);
+    } finally {
+      await rm(empty, { recursive: true, force: true });
+    }
+  }
+
+  private remotePath(serverId: string, staging: boolean): string {
+    const base = this.config.target.replace(/\/+$/, '');
+    const separator = base.endsWith(':') ? '' : '/';
+    return `${base}${separator}${staging ? '.archive-stage/' : ''}${serverId}`;
   }
 
   private enqueue(serverId: string, action: () => Promise<void>): Promise<void> {

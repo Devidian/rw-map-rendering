@@ -43,7 +43,7 @@ Create an empty directory and add these three files.
 ```yaml
 services:
   renderer:
-    image: devidian/rw-map-rendering:0.1.5
+    image: devidian/rw-map-rendering:0.1.6-rc.1
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
@@ -264,6 +264,8 @@ state and let the renderer perform a full sync.
 | `PORT` | `3000` | Health server port. |
 | `HOST` | `0.0.0.0` | Health server host. |
 | `MAP_ROOT_DIR` | `/appdata/rw-map-rendering/tiles` | Rendered tile root. |
+| `PUBLISH_MODE` | `raw` | `raw` publishes individual PNGs; `archive` publishes ZIP tile columns through RSYNC and/or SFTP. |
+| `ARCHIVE_ROOT_DIR` | `<MAP_ROOT_DIR>/.archives` | Persistent local staging tree for ZIP archives in archive mode. |
 | `POLL_INTERVAL_MS` | `15000` | Poll interval. |
 | `RENDER_SERVERS_CONFIG_FILE` | required | Path to the server-config JSON file. In Docker Compose it is mounted read-only at `/app/config/server-config.json`. |
 | `RSYNC_TARGET` | empty | Optional rsync target for rendered tiles. |
@@ -292,6 +294,41 @@ Server config shape:
 
 When `RSYNC_TARGET` is configured, rsync runs after each successful server render batch. If `RSYNC_SSH_KEY_FILE` is configured and the target is SSH-shaped, the key is passed through `rsync -e`.
 
+### Archive publication (`PUBLISH_MODE=archive`)
+
+The mode applies to both RSYNC and SFTP. `raw` is the default and keeps the
+existing PNG publication behavior. In archive mode, each local tile column
+`<server-id>/<z>/<x>/*.png` becomes one uncompressed ZIP at
+`<server-id>/<z>/<x>.zip`; satellite columns use
+`<server-id>/satellite/<z>/<x>.zip`. The ZIP entries are the original `<y>.png`
+files. Metadata JSON is published at its original paths. PNGs remain available
+locally to the renderer; only the published representation changes.
+
+Archive staging defaults to `<MAP_ROOT_DIR>/.archives`, on the same persistent
+volume as the tiles. On startup, existing tile columns with missing or stale
+archives are built and the archive tree is published. After a render batch,
+only its changed columns are rebuilt. SFTP uploads only those changed archives
+and metadata; RSYNC compares the per-server archive tree. Archive SFTP uploads
+go to `.archive-stage/<server-id>` and are promoted with server-side renames;
+RSYNC uses its temporary-file/rename behavior. This prevents PHP from opening
+a partially uploaded ZIP, including with older rclone versions.
+Archive publication uses additive transfers, so it does not remove web-root
+PHP files or old raw tiles. Remove old raw tiles only after checking the new
+archive reader and backups. SFTP idle/hourly reconciliation copies the archive
+tree without deleting remote files; it compares archive sizes for that broad
+scan. Direct uploads of changed archives are always forced through staging, so
+same-size changes from rendering are still published. `0` still disables either
+timer.
+
+Copy [the Apache/PHP example](examples/archive-webspace/README.md) into the
+public tile root separately. It rewrites the existing PNG URLs to a ZIP reader,
+so map metadata and frontend URL templates do not change. The web host needs
+Apache `mod_rewrite`, PHP, and the PHP ZIP extension. A plain static server
+needs its own equivalent reader for archive mode. Keep `SFTP_TARGET` or
+`RSYNC_TARGET` empty until the web reader is installed and tested. To return to
+individual PNG publication, set `PUBLISH_MODE=raw` and republish the raw tree;
+remove the archive rewrite rules once raw tiles are present.
+
 ### SFTP tile publication
 
 Set `SFTP_TARGET=webspace:` when the SFTP login root is the web root, or
@@ -318,10 +355,10 @@ authentication. For password authentication, create the config with
 `rclone config` so the password is stored in rclone's obscured form; keep the
 file private. SFTP-only webspaces do not require a remote shell.
 
-After each successful render batch, `rclone copy` uploads only the files written
-by that batch without deleting remote files. `rclone sync` then reconciles the entire
-server directory after five minutes of inactivity and once per hour even if
-rendering stays active. Sync refuses to run without matching local
+In `raw` mode, after each successful render batch, `rclone copy` uploads only
+the files written by that batch without deleting remote files. `rclone sync`
+then reconciles the entire server directory after five minutes of inactivity
+and once per hour even if rendering stays active. Sync refuses to run without matching local
 `metadata.json`, so a missing tile directory cannot empty the remote copy.
 Only the resulting per-server directory is a deletion scope. Test the
 target with a separate `rclone sync --dry-run` before enabling it against

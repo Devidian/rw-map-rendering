@@ -98,6 +98,26 @@ describe('SftpPublisher', () => {
     ]]);
   });
 
+  it('stages archive uploads and promotes them without deleting web-root files', async () => {
+    const calls: string[][] = [];
+    await mkdir(path.join(root, serverId));
+    await writeFile(path.join(root, serverId, 'metadata.json'), JSON.stringify({ serverId }));
+    const publisher = new SftpPublisher(root, config,
+      async (_command, args) => { calls.push(args); }, true);
+    await publisher.publishServer(serverId, ['8/-2.zip']);
+    await publisher.syncServer(serverId);
+    publisher.stop();
+    expect(calls.map((args) => args[2])).toEqual(['copy', 'move', 'sync', 'sync', 'move']);
+    expect(calls[0]).toContain('--sftp-set-modtime=false');
+    expect(calls[0]).toContain('1');
+    expect(calls[0].at(-1)).toBe(`webspace:maps/.archive-stage/${serverId}`);
+    expect(calls[1].at(-1)).toBe(`webspace:maps/${serverId}`);
+    expect(calls[2].at(-1)).toBe(`webspace:maps/.archive-stage/${serverId}`);
+    expect(calls[3]).toContain('--compare-dest');
+    expect(calls[3]).toContain('--size-only');
+    expect(calls[4]).toContain('--ignore-times');
+  });
+
   it('allows a later full sync to recover from a failed direct upload', async () => {
     await mkdir(path.join(root, serverId));
     await writeFile(path.join(root, serverId, 'metadata.json'), JSON.stringify({ serverId }));

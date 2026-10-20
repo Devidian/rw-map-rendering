@@ -13,6 +13,8 @@ services:
       RENDER_SERVERS_CONFIG_FILE: /app/config/server-config.json
       RSYNC_TARGET: ${RSYNC_TARGET:-}
       RSYNC_SSH_KEY_FILE: ${RSYNC_SSH_KEY_FILE:-}
+      PUBLISH_MODE: ${PUBLISH_MODE:-raw}
+      ARCHIVE_ROOT_DIR: ${ARCHIVE_ROOT_DIR:-}
       SFTP_TARGET: ${SFTP_TARGET:-}
       SFTP_CONFIG_FILE: /app/config/rclone.conf
       SFTP_IDLE_SYNC_MS: ${SFTP_IDLE_SYNC_MS:-300000}

@@ -23,6 +23,17 @@ export class AppConfig {
     return process.env.RSYNC_TARGET?.trim() || undefined;
   }
 
+  static get publishMode(): 'raw' | 'archive' {
+    const value = process.env.PUBLISH_MODE?.trim() || 'raw';
+    if (value !== 'raw' && value !== 'archive') throw new Error('PUBLISH_MODE must be raw or archive');
+    return value;
+  }
+
+  static get archiveRootDir(): string {
+    return process.env.ARCHIVE_ROOT_DIR?.trim()
+      || path.join(this.mapRootDir, '.archives');
+  }
+
   static get rsyncSshKeyFile(): string | undefined {
     return process.env.RSYNC_SSH_KEY_FILE?.trim() || undefined;
   }
