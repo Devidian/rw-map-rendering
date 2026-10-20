@@ -43,7 +43,7 @@ Create an empty directory and add these three files.
 ```yaml
 services:
   renderer:
-    image: devidian/rw-map-rendering:0.1.6-rc.1
+    image: devidian/rw-map-rendering:0.1.6
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
