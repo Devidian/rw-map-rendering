@@ -27,6 +27,22 @@ export class AppConfig {
     return process.env.RSYNC_SSH_KEY_FILE?.trim() || undefined;
   }
 
+  static get sftpTarget(): string | undefined {
+    return process.env.SFTP_TARGET?.trim() || undefined;
+  }
+
+  static get sftpConfigFile(): string {
+    return process.env.SFTP_CONFIG_FILE?.trim() || '/app/config/rclone.conf';
+  }
+
+  static get sftpIdleSyncMs(): number {
+    return boundedInteger(process.env.SFTP_IDLE_SYNC_MS, 300000, 0, Number.MAX_SAFE_INTEGER);
+  }
+
+  static get sftpFullSyncMs(): number {
+    return boundedInteger(process.env.SFTP_FULL_SYNC_MS, 3600000, 0, Number.MAX_SAFE_INTEGER);
+  }
+
   static get logLevel(): 'debug' | 'info' | 'warn' | 'error' | 'off' {
     const value = process.env.LOG_LEVEL;
     return value === 'debug' || value === 'info' || value === 'warn' || value === 'error' || value === 'off'

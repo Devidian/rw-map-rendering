@@ -21,10 +21,14 @@ ENV HOST=0.0.0.0
 ENV RENDER_SERVERS_CONFIG_FILE=/app/config/server-config.json
 ENV RSYNC_TARGET=
 ENV RSYNC_SSH_KEY_FILE=
+ENV SFTP_TARGET=
+ENV SFTP_CONFIG_FILE=/app/config/rclone.conf
+ENV SFTP_IDLE_SYNC_MS=300000
+ENV SFTP_FULL_SYNC_MS=3600000
 ENV LOG_LEVEL=info
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssh-client rsync \
+  && apt-get install -y --no-install-recommends openssh-client rsync rclone \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json yarn.lock .yarnrc.yml ./

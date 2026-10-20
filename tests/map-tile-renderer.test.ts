@@ -45,6 +45,11 @@ describe('MapTileRenderer', () => {
       tileUrl: '/server-test/{z}/{x}/{y}.png',
       updatedAt: '2026-06-29T00:00:00.000Z',
     }));
+    expect(renderer.takeChangedPaths('server-test')).toEqual([
+      '8/0/0.png', '7/0/0.png', '6/0/0.png', '5/0/0.png', '4/0/0.png',
+      '3/0/0.png', '2/0/0.png', '1/0/0.png', '0/0/0.png', 'metadata.json',
+    ]);
+    expect(renderer.takeChangedPaths('server-test')).toEqual([]);
   }, 20000);
 
   it('renders every present chunk quadrant as opaque pixels', async () => {

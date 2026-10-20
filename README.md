@@ -43,7 +43,7 @@ Create an empty directory and add these three files.
 ```yaml
 services:
   renderer:
-    image: devidian/rw-map-rendering:0.1.4
+    image: devidian/rw-map-rendering:0.1.5
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
@@ -268,6 +268,10 @@ state and let the renderer perform a full sync.
 | `RENDER_SERVERS_CONFIG_FILE` | required | Path to the server-config JSON file. In Docker Compose it is mounted read-only at `/app/config/server-config.json`. |
 | `RSYNC_TARGET` | empty | Optional rsync target for rendered tiles. |
 | `RSYNC_SSH_KEY_FILE` | empty | Optional SSH key file for SSH rsync targets. |
+| `SFTP_TARGET` | empty | Optional rclone SFTP destination base, e.g. `webspace:` for the login root or `webspace:maps`; each server is published below its own `server-<id>` directory. |
+| `SFTP_CONFIG_FILE` | `/app/config/rclone.conf` | rclone config file inside the container. Mount it read-only when SFTP is enabled. |
+| `SFTP_IDLE_SYNC_MS` | `300000` | Full SFTP sync after this much time without a new rendered batch; `0` disables it. |
+| `SFTP_FULL_SYNC_MS` | `3600000` | Full SFTP sync interval while the renderer runs; `0` disables it. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`, or `off`. |
 
 Server config shape:
@@ -287,6 +291,45 @@ Server config shape:
 ```
 
 When `RSYNC_TARGET` is configured, rsync runs after each successful server render batch. If `RSYNC_SSH_KEY_FILE` is configured and the target is SSH-shaped, the key is passed through `rsync -e`.
+
+### SFTP tile publication
+
+Set `SFTP_TARGET=webspace:` when the SFTP login root is the web root, or
+`SFTP_TARGET=webspace:maps` for a `maps/` subdirectory. Mount a private rclone config at
+`/app/config/rclone.conf` (see the commented volume in `docker-compose.yml`).
+The renderer always appends the deterministic server ID, so sync deletion
+stays inside that server directory. With a web-root login,
+`webspace:server-<id>/metadata.json` is served as
+`https://rw-tileserver.omega-zirkel.de/server-<id>/metadata.json`. Example config:
+
+```ini
+[webspace]
+type = sftp
+host = sftp.example.org
+user = map-uploader
+port = 22
+key_file = /app/config/sftp-key
+known_hosts_file = /app/config/known_hosts
+shell_type = none
+```
+
+Mount the key and verified `known_hosts` file read-only if using key
+authentication. For password authentication, create the config with
+`rclone config` so the password is stored in rclone's obscured form; keep the
+file private. SFTP-only webspaces do not require a remote shell.
+
+After each successful render batch, `rclone copy` uploads only the files written
+by that batch without deleting remote files. `rclone sync` then reconciles the entire
+server directory after five minutes of inactivity and once per hour even if
+rendering stays active. Sync refuses to run without matching local
+`metadata.json`, so a missing tile directory cannot empty the remote copy.
+Only the resulting per-server directory is a deletion scope. Test the
+target with a separate `rclone sync --dry-run` before enabling it against
+an existing webspace. Rsync publication remains independently available.
+For large existing maps, set both sync intervals to `0` during the first upload,
+seed the existing tile tree in controlled batches, then choose reconciliation
+intervals based on the measured SFTP listing time. Direct uploads continue with
+the intervals disabled.
 
 ## Validation
 

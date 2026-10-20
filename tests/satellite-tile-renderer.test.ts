@@ -10,15 +10,21 @@ test('stores scaled satellite chunks beside the surface pyramid and preserves la
   const renderer = new SatelliteTileRenderer(root);
   const image = new PNG({ width: 256, height: 256, colorType: 6 });
   image.data.fill(255);
+  await new MapTileRenderer(root).writeMetadata('server-test', 'Test', {
+    chunkBounds: { minX: 0, minZ: 0, maxX: 1, maxZ: 1 },
+    tileBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
+  });
   await renderer.render('server-test', [{ change: { x: -1, z: 0, res: 256, revision: 1 }, png: PNG.sync.write(image) }]);
   const tile = PNG.sync.read(readFileSync(path.join(root, 'server-test', 'satellite', '8', '-1', '0.png')));
   expect(tile.data[((tile.width * 130 + 130) << 2) + 3]).toBe(255);
   expect(tile.data[((tile.width * 2 + 2) << 2) + 3]).toBe(0);
   expect(readFileSync(path.join(root, 'server-test', 'satellite', '0', '-1', '0.png')).length).toBeGreaterThan(0);
-  await new MapTileRenderer(root).writeMetadata('server-test', 'Test', {
-    chunkBounds: { minX: 0, minZ: 0, maxX: 1, maxZ: 1 },
-    tileBounds: { minX: 0, minZ: 0, maxX: 0, maxZ: 0 },
-  });
   const metadata = JSON.parse(readFileSync(path.join(root, 'server-test', 'metadata.json'), 'utf8')) as Record<string, unknown>;
   expect(metadata.satelliteTileUrl).toBe('/server-test/satellite/{z}/{x}/{y}.png');
+  expect(renderer.takeChangedPaths('server-test')).toEqual([
+    'satellite/8/-1/0.png', 'satellite/7/-1/0.png', 'satellite/6/-1/0.png',
+    'satellite/5/-1/0.png', 'satellite/4/-1/0.png', 'satellite/3/-1/0.png',
+    'satellite/2/-1/0.png', 'satellite/1/-1/0.png', 'satellite/0/-1/0.png',
+    'satellite/metadata.json', 'metadata.json',
+  ]);
 }, 20000);

@@ -26,7 +26,7 @@ export function isSshTarget(target: string): boolean {
   return /^[^/\s@:]+@[^/\s:]+:/.test(target) || /^[^/\s:]+:/.test(target);
 }
 
-function spawnCommand(command: string, args: string[]): Promise<void> {
+export function spawnCommand(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: 'inherit' });
     child.once('error', reject);

@@ -5,7 +5,7 @@ import { MapExportBusyError, type NativeMapSource, type NativeMapSourceResult, t
 import type { MapSourceCacheStore, MapSourceCacheMergeResult } from './map-source-cache-store.js';
 import type { MapTileRenderer } from './map-tile-renderer.js';
 import type { RenderStateStore } from './render-state-store.js';
-import type { RsyncPublisher } from './rsync-publisher.js';
+import type { TilePublisher } from '../interfaces/tile-publisher.js';
 
 export interface MapRenderPollResult {
   serverId: string;
@@ -17,11 +17,11 @@ export interface MapRenderPollResult {
 export class MapRenderPoller {
   constructor(
     private readonly source: Pick<NativeMapSource, 'fetchMapData'> & Partial<Pick<NativeMapSource, 'streamMapData'>>,
-    private readonly renderer: Pick<MapTileRenderer, 'render'> & Partial<Pick<MapTileRenderer, 'writeMetadata'>>,
+    private readonly renderer: Pick<MapTileRenderer, 'render'> & Partial<Pick<MapTileRenderer, 'writeMetadata' | 'takeChangedPaths'>>,
     private readonly state: Pick<RenderStateStore, 'getServerState' | 'setServerCursor'>,
     private readonly cache?: Pick<MapSourceCacheStore, 'mergeChunks' | 'replaceChunks'>
       & Partial<Pick<MapSourceCacheStore, 'beginFullSync' | 'appendFullSyncPage' | 'finishFullSync' | 'abortFullSync'>>,
-    private readonly publisher?: Pick<RsyncPublisher, 'publishServer'>,
+    private readonly publisher?: TilePublisher,
   ) {}
 
   async pollServer(server: RenderServerConfig): Promise<MapRenderPollResult> {
@@ -41,7 +41,8 @@ export class MapRenderPoller {
         chunkBounds: cacheResult?.chunkBounds,
         tileBounds: cacheResult?.tileBounds,
       });
-      await this.publisher?.publishServer(serverId);
+      const changedFiles = this.renderer.takeChangedPaths?.(serverId);
+      await this.publisher?.publishServer(serverId, changedFiles);
     }
     if (response.nextChange !== null) {
       await this.state.setServerCursor(serverId, response.nextChange);
@@ -111,10 +112,12 @@ export class MapRenderPoller {
       const cacheResult = await cache.finishFullSync!(serverId);
       if (fetched > 0) {
         await this.renderer.writeMetadata!(serverId, server.name ?? serverId, cacheResult);
-        await this.publisher?.publishServer(serverId);
+        const changedFiles = this.renderer.takeChangedPaths?.(serverId);
+        await this.publisher?.publishServer(serverId, changedFiles);
       }
     } else if (fetched > 0) {
-      await this.publisher?.publishServer(serverId);
+      const changedFiles = this.renderer.takeChangedPaths?.(serverId);
+      await this.publisher?.publishServer(serverId, changedFiles);
     }
     if (streamResult.nextChange !== null) await this.state.setServerCursor(serverId, streamResult.nextChange);
     return { serverId, fetched, rendered: fetched, cursor: streamResult.nextChange ?? cursor };

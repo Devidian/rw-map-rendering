@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+## [0.1.5] - 2026-10-20
+
 - feat: poll optional Admin Utils satellite images and publish a separate satellite tile pyramid when data exists.
+- feat: publish changed map and satellite files over SFTP using rclone, with optional idle and hourly reconciliation.
+- fix: keep SFTP full synchronization within a validated server directory and allow it to be disabled during initial seeding.
 
 ## [0.1.4] - 2026-09-08
 

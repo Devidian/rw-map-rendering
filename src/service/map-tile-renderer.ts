@@ -14,6 +14,8 @@ const MIN_ZOOM = 0;
 const NATIVE_ZOOM = 8;
 
 export class MapTileRenderer {
+  private readonly changedPaths = new Map<string, Set<string>>();
+
   constructor(
     private readonly tileRoot: string,
     private readonly clock: () => number = Date.now,
@@ -58,7 +60,9 @@ export class MapTileRenderer {
           if (chunk) renderChunk(image, chunk, offsetX, offsetZ);
         }
       }
-      await writePngAtomic(tilePath(serverRoot, NATIVE_ZOOM, tileX, tileZ), image);
+      const file = tilePath(serverRoot, NATIVE_ZOOM, tileX, tileZ);
+      await writePngAtomic(file, image);
+      this.recordPath(serverId, file);
     }
 
     let affected = nativeTiles;
@@ -68,11 +72,13 @@ export class MapTileRenderer {
       );
       for (const [tileX, tileZ] of affected) {
         await rebuildParent(serverRoot, zoom, tileX, tileZ);
+        this.recordPath(serverId, tilePath(serverRoot, zoom, tileX, tileZ));
       }
     }
 
     if (options.writeMetadata !== false) {
       await writeMetadata(serverRoot, serverId, displayName, chunks, this.clock(), options);
+      this.recordPath(serverId, path.join(serverRoot, 'metadata.json'));
     }
   }
 
@@ -82,6 +88,19 @@ export class MapTileRenderer {
     bounds: { chunkBounds: MapBounds; tileBounds: MapBounds },
   ): Promise<void> {
     await writeMetadata(path.join(this.tileRoot, serverId), serverId, displayName, [], this.clock(), bounds);
+    this.recordPath(serverId, path.join(this.tileRoot, serverId, 'metadata.json'));
+  }
+
+  takeChangedPaths(serverId: string): string[] {
+    const changed = [...(this.changedPaths.get(serverId) ?? [])];
+    this.changedPaths.delete(serverId);
+    return changed;
+  }
+
+  private recordPath(serverId: string, file: string): void {
+    const changed = this.changedPaths.get(serverId) ?? new Set<string>();
+    changed.add(path.relative(path.join(this.tileRoot, serverId), file).split(path.sep).join('/'));
+    this.changedPaths.set(serverId, changed);
   }
 }
 

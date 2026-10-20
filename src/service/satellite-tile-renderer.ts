@@ -8,7 +8,21 @@ const CHUNK_PIXELS = 128;
 const NATIVE_ZOOM = 8;
 
 export class SatelliteTileRenderer {
+  private readonly changedPaths = new Map<string, Set<string>>();
+
   constructor(private readonly tileRoot: string) {}
+
+  takeChangedPaths(serverId: string): string[] {
+    const changed = [...(this.changedPaths.get(serverId) ?? [])];
+    this.changedPaths.delete(serverId);
+    return changed;
+  }
+
+  private recordPath(serverId: string, file: string): void {
+    const changed = this.changedPaths.get(serverId) ?? new Set<string>();
+    changed.add(path.relative(path.join(this.tileRoot, serverId), file).split(path.sep).join('/'));
+    this.changedPaths.set(serverId, changed);
+  }
 
   async render(serverId: string, images: Array<{ change: SatelliteChange; png: Buffer }>): Promise<void> {
     if (!images.length) return;
@@ -36,7 +50,11 @@ export class SatelliteTileRenderer {
       }
     }
     let affected = [...tiles.values()].map(({ x, z }) => [x, z] as const);
-    for (const tile of tiles.values()) await writePng(tilePath(satelliteRoot, NATIVE_ZOOM, tile.x, tile.z), tile.image);
+    for (const tile of tiles.values()) {
+      const file = tilePath(satelliteRoot, NATIVE_ZOOM, tile.x, tile.z);
+      await writePng(file, tile.image);
+      this.recordPath(serverId, file);
+    }
     for (let zoom = NATIVE_ZOOM - 1; zoom >= 0; zoom--) {
       affected = unique(affected.map(([x, z]) => [Math.floor(x / 2), Math.floor(z / 2)] as const));
       for (const [x, z] of affected) {
@@ -48,15 +66,20 @@ export class SatelliteTileRenderer {
             copyPixel(child, px * 2, py * 2, parent, dx * 128 + px, (1 - dz) * 128 + py);
           }
         }
-        await writePng(tilePath(satelliteRoot, zoom, x, z), parent);
+        const file = tilePath(satelliteRoot, zoom, x, z);
+        await writePng(file, parent);
+        this.recordPath(serverId, file);
       }
     }
-    await writeAtomic(path.join(satelliteRoot, 'metadata.json'), Buffer.from(JSON.stringify({ schemaVersion: 1, updatedAt: new Date().toISOString() })));
+    const satelliteMetadataFile = path.join(satelliteRoot, 'metadata.json');
+    await writeAtomic(satelliteMetadataFile, Buffer.from(JSON.stringify({ schemaVersion: 1, updatedAt: new Date().toISOString() })));
+    this.recordPath(serverId, satelliteMetadataFile);
     const metadataPath = path.join(root, 'metadata.json');
     try {
       const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as Record<string, unknown>;
       metadata.satelliteTileUrl = `/${serverId}/satellite/{z}/{x}/{y}.png`;
       await writeAtomic(metadataPath, Buffer.from(`${JSON.stringify(metadata, null, 2)}\n`));
+      this.recordPath(serverId, metadataPath);
     } catch (error) {
       if (!isMissing(error)) throw error;
     }

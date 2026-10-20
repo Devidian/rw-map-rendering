@@ -10,6 +10,8 @@ import { RsyncPublisher } from './rsync-publisher.js';
 import { NativeSatelliteSource } from './native-satellite-source.js';
 import { SatelliteTileRenderer } from './satellite-tile-renderer.js';
 import { SatelliteRenderPoller } from './satellite-render-poller.js';
+import { SftpPublisher } from './sftp-publisher.js';
+import { serverIdFor } from '../utils/server-id.js';
 
 export interface RendererRuntimeStatus {
   servers: number;
@@ -26,10 +28,12 @@ export class RendererRuntime {
     private readonly poller: Pick<MapRenderPoller, 'pollServer'>,
     private readonly intervalMs: number = AppConfig.pollIntervalMs,
     private readonly satellitePoller?: Pick<SatelliteRenderPoller, 'pollServer'>,
+    private readonly publisher?: Pick<SftpPublisher, 'start' | 'stop'>,
   ) {}
 
   start(): void {
     if (this.stopped || this.timer) return;
+    this.publisher?.start(this.servers.map((server) => serverIdFor(server.ip, server.port)));
     const run = async () => {
       if (this.running) return;
       this.running = true;
@@ -56,6 +60,7 @@ export class RendererRuntime {
 
   stop(): void {
     this.stopped = true;
+    this.publisher?.stop();
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
   }
@@ -74,10 +79,22 @@ export function mapRenderPollErrorMessage(error: unknown): string | undefined {
 export function startRendererRuntime(): RendererRuntime {
   const mapRoot = resolveMapRoot();
   const state = new RenderStateStore(renderStatePath(mapRoot));
-  const publisher = new RsyncPublisher(mapRoot, {
+  const rsyncPublisher = new RsyncPublisher(mapRoot, {
     target: AppConfig.rsyncTarget,
     sshKeyFile: AppConfig.rsyncSshKeyFile,
   });
+  const sftpPublisher = AppConfig.sftpTarget ? new SftpPublisher(mapRoot, {
+    target: AppConfig.sftpTarget,
+    configFile: AppConfig.sftpConfigFile,
+    idleSyncMs: AppConfig.sftpIdleSyncMs,
+    fullSyncMs: AppConfig.sftpFullSyncMs,
+  }) : undefined;
+  const publisher = {
+    publishServer: async (serverId: string, changedFiles?: string[]): Promise<void> => {
+      await rsyncPublisher.publishServer(serverId);
+      await sftpPublisher?.publishServer(serverId, changedFiles);
+    },
+  };
   const runtime = new RendererRuntime(
     AppConfig.renderServers,
     new MapRenderPoller(
@@ -89,6 +106,7 @@ export function startRendererRuntime(): RendererRuntime {
     ),
     AppConfig.pollIntervalMs,
     new SatelliteRenderPoller(new NativeSatelliteSource(), new SatelliteTileRenderer(mapRoot), state, publisher),
+    sftpPublisher,
   );
   runtime.start();
   return runtime;
