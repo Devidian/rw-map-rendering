@@ -55,6 +55,23 @@ export class NativeMapSource {
     return this.fetchPagedMapData(server, lastChange, consume);
   }
 
+  async acknowledgeChunks(server: RenderServerConfig, chunks: MapSourceChunk[]): Promise<void> {
+    if (!server.mapAckToken || chunks.length === 0) return;
+    const url = new URL('/plugins/oz---admin-utils/map-ack', `${server.baseUrl}/`);
+    const response = await this.fetchImpl(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${server.mapAckToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(chunks.map((chunk) => ({
+        chunkX: chunk.chunkX,
+        chunkZ: chunk.chunkZ,
+        updatedAtMs: chunk.updatedAtMs,
+        contentHash: chunk.contentHash,
+      }))),
+      signal: server.timeoutMs === undefined ? undefined : AbortSignal.timeout(server.timeoutMs),
+    });
+    if (!response.ok) throw new Error(`Map acknowledgement returned HTTP ${response.status}`);
+  }
+
   private async fetchPagedMapData(
     server: RenderServerConfig,
     lastChange?: number,

@@ -1,5 +1,6 @@
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { MapBounds } from '../interfaces/map-bounds.js';
 import type { MapSourceChunk } from '../interfaces/map-source-chunk.js';
 
@@ -64,29 +65,38 @@ export class MapSourceCacheStore {
     return { renderChunks: sortChunks(chunks), ...meta };
   }
 
-  async beginFullSync(serverId: string): Promise<void> {
+  async beginFullSync(serverId: string, preserveExisting = false): Promise<void> {
     if (this.fullSyncs.has(serverId)) throw new Error(`Full sync is already active for ${serverId}`);
     await mkdir(this.cacheRoot, { recursive: true });
-    await rm(this.serverShardRoot(serverId), { recursive: true, force: true });
-    this.fullSyncs.set(serverId, emptyFullSyncState());
+    if (!preserveExisting) await rm(this.serverShardRoot(serverId), { recursive: true, force: true });
+    this.fullSyncs.set(serverId, { ...emptyFullSyncState(), preserveExisting });
   }
 
   async appendFullSyncPage(serverId: string, chunks: MapSourceChunk[]): Promise<void> {
     const state = this.fullSyncs.get(serverId);
     if (!state) throw new Error(`No active full sync for ${serverId}`);
     const bySector = groupBy(chunks, sectorKey);
+    let pageNewChunks = 0;
     for (const [key, pageChunks] of bySector) {
       const shardPath = this.shardPath(serverId, key);
       const existing = await this.readShard(shardPath);
       const merged = new Map(existing.map((chunk) => [chunkKey(chunk), chunk]));
       for (const chunk of pageChunks) merged.set(chunkKey(chunk), chunk);
+      pageNewChunks += merged.size - existing.length;
       const sectorChunks = sortChunks([...merged.values()]);
       await this.writeShard(shardPath, sectorChunks);
     }
+    state.totalChunks += pageNewChunks;
     for (const chunk of chunks) {
-      state.totalChunks += 1;
       extendBounds(state.chunkBounds, chunk.chunkX, chunk.chunkZ);
       extendBounds(state.tileBounds, floorDiv(chunk.chunkX, NATIVE_TILE_SIZE_CHUNKS), floorDiv(chunk.chunkZ, NATIVE_TILE_SIZE_CHUNKS));
+    }
+    if (state.preserveExisting && chunks.length > 0) {
+      const previous = await this.readMeta(serverId);
+      const meta = previous
+        ? expandBounds({ ...previous, totalChunks: previous.totalChunks + pageNewChunks }, chunks)
+        : boundsFor(chunks);
+      await this.writeMeta(serverId, meta);
     }
   }
 
@@ -94,7 +104,7 @@ export class MapSourceCacheStore {
     const state = this.fullSyncs.get(serverId);
     if (!state) throw new Error(`No active full sync for ${serverId}`);
     try {
-      const meta = fullSyncMeta(state);
+      const meta = (state.preserveExisting ? await this.readMeta(serverId) : null) ?? fullSyncMeta(state);
       await this.writeMeta(serverId, meta);
       return meta;
     } finally {
@@ -178,10 +188,17 @@ export class MapSourceCacheStore {
     meta: Omit<MapSourceCacheMergeResult, 'renderChunks'>,
   ): Promise<void> {
     await mkdir(this.cacheRoot, { recursive: true });
-    await writeFile(this.metaPath(serverId), `${JSON.stringify({
-      schemaVersion: CACHE_SCHEMA_VERSION,
-      ...meta,
-    }, null, 2)}\n`);
+    const target = this.metaPath(serverId);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify({
+        schemaVersion: CACHE_SCHEMA_VERSION,
+        ...meta,
+      }, null, 2)}\n`);
+      await rename(temporary, target);
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 
   private async readShard(filePath: string): Promise<MapSourceChunk[]> {
@@ -197,7 +214,13 @@ export class MapSourceCacheStore {
 
   private async writeShard(filePath: string, chunks: MapSourceChunk[]): Promise<void> {
     await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, `${JSON.stringify({ schemaVersion: CACHE_SCHEMA_VERSION, chunks: chunks.map(toCachedChunk) }, null, 2)}\n`);
+    const temporary = `${filePath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify({ schemaVersion: CACHE_SCHEMA_VERSION, chunks: chunks.map(toCachedChunk) }, null, 2)}\n`);
+      await rename(temporary, filePath);
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 
   private async listShardPaths(serverId: string): Promise<string[]> {
@@ -244,6 +267,7 @@ interface FullSyncState {
   totalChunks: number;
   chunkBounds: MutableBounds;
   tileBounds: MutableBounds;
+  preserveExisting?: boolean;
 }
 
 interface MutableBounds {

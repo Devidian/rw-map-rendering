@@ -6,4 +6,5 @@ export interface RenderServerConfig {
   timeoutMs?: number;
   retryAttempts?: number;
   retryBackoffMs?: number;
+  mapAckToken?: string;
 }

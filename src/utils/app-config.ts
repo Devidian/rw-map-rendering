@@ -85,6 +85,8 @@ function parseServer(value: unknown): RenderServerConfig[] {
       timeoutMs: optionalBoundedInteger(item.timeoutMs, 500, 60000),
       retryAttempts: optionalBoundedInteger(item.retryAttempts, 0, 10),
       retryBackoffMs: optionalBoundedInteger(item.retryBackoffMs, 0, 60000),
+      mapAckToken: typeof item.mapAckToken === 'string' && item.mapAckToken.trim()
+        ? item.mapAckToken.trim() : undefined,
     }];
   } catch {
     return [];

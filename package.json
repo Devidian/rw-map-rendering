@@ -1,6 +1,6 @@
 {
   "name": "rw-map-rendering",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "packageManager": "yarn@4.16.0",
   "engines": {

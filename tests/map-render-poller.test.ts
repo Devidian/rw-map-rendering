@@ -23,6 +23,20 @@ const chunk: MapSourceChunk = {
 };
 
 describe('MapRenderPoller', () => {
+  it('does not advance the cursor when acknowledgement fails', async () => {
+    let advanced = false;
+    const poller = new MapRenderPoller(
+      {
+        fetchMapData: async () => ({ full: false, nextChange: 1000, chunks: [chunk] }),
+        acknowledgeChunks: async () => { throw new Error('ack failed'); },
+      },
+      { render: async () => {} },
+      { getServerState: async () => ({ cursor: 500 }),
+        setServerCursor: async () => { advanced = true; } },
+    );
+    await expect(poller.pollServer({ ...server, mapAckToken: 'secret' })).rejects.toThrow('ack failed');
+    expect(advanced).toBe(false);
+  });
   it('renders chunks and advances cursor after success', async () => {
     const rendered: MapSourceChunk[][] = [];
     const cursors: Array<[string, number]> = [];

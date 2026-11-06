@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*-rc.*'
+      - 'rw-map-rendering-v*'
   release:
     types:
       - published
@@ -15,7 +16,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   publish:
@@ -75,6 +76,18 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.version.outputs.tags }}
+
+      - name: Publish stable GitHub release
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'rw-map-rendering-v') && !contains(steps.version.outputs.version, '-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          test -s "release-notes/${RELEASE_VERSION}.md"
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "rw-map-rendering ${RELEASE_VERSION}" \
+            --notes-file "release-notes/${RELEASE_VERSION}.md" \
+            --verify-tag
 
       - name: Update Docker Hub description
         continue-on-error: true

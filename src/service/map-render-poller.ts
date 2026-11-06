@@ -16,7 +16,7 @@ export interface MapRenderPollResult {
 
 export class MapRenderPoller {
   constructor(
-    private readonly source: Pick<NativeMapSource, 'fetchMapData'> & Partial<Pick<NativeMapSource, 'streamMapData'>>,
+    private readonly source: Pick<NativeMapSource, 'fetchMapData'> & Partial<Pick<NativeMapSource, 'streamMapData' | 'acknowledgeChunks'>>,
     private readonly renderer: Pick<MapTileRenderer, 'render'> & Partial<Pick<MapTileRenderer, 'writeMetadata' | 'takeChangedPaths'>>,
     private readonly state: Pick<RenderStateStore, 'getServerState' | 'setServerCursor'>,
     private readonly cache?: Pick<MapSourceCacheStore, 'mergeChunks' | 'replaceChunks'>
@@ -32,17 +32,20 @@ export class MapRenderPoller {
     if (response.chunks.length > 0) {
       const cacheResult: MapSourceCacheMergeResult | undefined = this.cache
         ? response.full
-          ? await this.cache.replaceChunks(serverId, response.chunks)
+          ? server.mapAckToken
+            ? await this.cache.mergeChunks(serverId, response.chunks)
+            : await this.cache.replaceChunks(serverId, response.chunks)
           : await this.cache.mergeChunks(serverId, response.chunks)
         : undefined;
       const renderChunks = cacheResult?.renderChunks ?? response.chunks;
       await this.renderer.render(serverId, server.name ?? serverId, renderChunks, {
-        preserveMissingChunks: !response.full,
+        preserveMissingChunks: !response.full || Boolean(server.mapAckToken),
         chunkBounds: cacheResult?.chunkBounds,
         tileBounds: cacheResult?.tileBounds,
       });
       const changedFiles = this.renderer.takeChangedPaths?.(serverId);
       await this.publisher?.publishServer(serverId, changedFiles);
+      await this.acknowledge(server, response.chunks);
     }
     if (response.nextChange !== null) {
       await this.state.setServerCursor(serverId, response.nextChange);
@@ -80,7 +83,7 @@ export class MapRenderPoller {
     const full = cursor === undefined;
     let fetched = 0;
     let streamResult: NativeMapStreamResult;
-    if (full) await cache.beginFullSync!(serverId);
+    if (full) await cache.beginFullSync!(serverId, Boolean(server.mapAckToken));
     try {
       streamResult = await this.streamWithRetry(server, cursor, async (page) => {
         fetched += page.chunks.length;
@@ -90,6 +93,7 @@ export class MapRenderPoller {
             preserveMissingChunks: true,
             writeMetadata: false,
           });
+          await this.acknowledge(server, page.chunks);
           return;
         }
         const cacheResult = await cache.mergeChunks(serverId, page.chunks);
@@ -98,9 +102,10 @@ export class MapRenderPoller {
           chunkBounds: cacheResult.chunkBounds,
           tileBounds: cacheResult.tileBounds,
         });
+        await this.acknowledge(server, page.chunks);
       }, full ? async () => {
         cache.abortFullSync!(serverId);
-        await cache.beginFullSync!(serverId);
+        await cache.beginFullSync!(serverId, Boolean(server.mapAckToken));
         fetched = 0;
       } : undefined);
     } catch (error) {
@@ -121,6 +126,14 @@ export class MapRenderPoller {
     }
     if (streamResult.nextChange !== null) await this.state.setServerCursor(serverId, streamResult.nextChange);
     return { serverId, fetched, rendered: fetched, cursor: streamResult.nextChange ?? cursor };
+  }
+
+  private async acknowledge(server: RenderServerConfig, chunks: NativeMapSourceResult['chunks']): Promise<void> {
+    if (!server.mapAckToken || chunks.length === 0) return;
+    if (!this.source.acknowledgeChunks) throw new Error('Map acknowledgement unavailable');
+    for (let offset = 0; offset < chunks.length; offset += 100) {
+      await this.source.acknowledgeChunks(server, chunks.slice(offset, offset + 100));
+    }
   }
 
   private async fetchWithRetry(server: RenderServerConfig, cursor?: number) {

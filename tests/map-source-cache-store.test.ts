@@ -76,4 +76,26 @@ describe('MapSourceCacheStore', () => {
     }));
     await expect(store.getChunks('server-test')).resolves.toHaveLength(2);
   });
+
+  it('retains previously rendered source chunks during a pruned full sync', async () => {
+    const store = new MapSourceCacheStore(mkdtempSync(path.join(os.tmpdir(), 'rw-map-cache-')));
+    await store.replaceChunks('server-test', [chunk(0, 1000, 'a'.repeat(64))]);
+    await store.beginFullSync('server-test', true);
+    await store.appendFullSyncPage('server-test', [chunk(300, 2000, 'b'.repeat(64))]);
+    const result = await store.finishFullSync('server-test');
+    expect(result.totalChunks).toBe(2);
+    expect(result.chunkBounds).toEqual({ minX: 0, minZ: 0, maxX: 300, maxZ: 0 });
+    await expect(store.getChunks('server-test')).resolves.toHaveLength(2);
+  });
+
+  it('keeps cache metadata consistent after a full sync retry', async () => {
+    const store = new MapSourceCacheStore(mkdtempSync(path.join(os.tmpdir(), 'rw-map-cache-')));
+    await store.replaceChunks('server-test', [chunk(0, 1000, 'a'.repeat(64))]);
+    await store.beginFullSync('server-test', true);
+    await store.appendFullSyncPage('server-test', [chunk(300, 2000, 'b'.repeat(64))]);
+    store.abortFullSync('server-test');
+    await store.beginFullSync('server-test', true);
+    await store.appendFullSyncPage('server-test', [chunk(300, 2000, 'b'.repeat(64))]);
+    expect((await store.finishFullSync('server-test')).totalChunks).toBe(2);
+  });
 });

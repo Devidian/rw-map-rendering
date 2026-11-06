@@ -3,6 +3,20 @@
 Standalone renderer for Rising World map tiles. It polls the native Admin Utils
 map route, writes PNG tiles and can publish them through any static web server.
 
+One renderer process can render several game servers. Each entry in
+`server-config.json` has its own server ID, cursor, cache and tiles. For optional
+Admin Utils map source cleanup, set a private `mapAckToken` only on the relevant
+server entry and the same value as that server's Admin Utils
+`mapRendererAckToken`. The renderer acknowledges each page only after its
+source cache and local tiles are written. With acknowledgement enabled, full
+syncs preserve previously cached chunks and tiles because the game server may
+already have removed acknowledged chunks older than seven days. Keep
+`MAP_ROOT_DIR` persistent and backed up: a fresh renderer can rebuild only
+source chunks still retained by Admin Utils. Enable Admin Utils cleanup only
+after a complete renderer sync and a verified acknowledgement response.
+The acknowledgement contract assumes one authoritative renderer per world;
+other server entries can run without a token or cleanup.
+
 Experimental satellite images are polled through Admin Utils `sat-changes` and
 `sat-tile` when those routes exist. Images are scaled to the terrain map's
 128 pixels per chunk and stored under `<server-id>/satellite/`. `metadata.json`
