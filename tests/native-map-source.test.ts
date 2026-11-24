@@ -21,6 +21,22 @@ function chunk() {
 }
 
 describe('NativeMapSource', () => {
+  test('acknowledges only the rendered version with the configured token', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const source = new NativeMapSource(async (url, init) => {
+      calls.push({ url: url.toString(), init });
+      return new Response('{"acknowledged":1}', { status: 200 });
+    });
+    const decoded = decodeNativeMapResponse({ schemaVersion: 1, full: false, nextChange: 1000, chunks: [chunk()] });
+    await source.acknowledgeChunks({ ip: '127.0.0.1', port: 4255,
+      baseUrl: 'http://127.0.0.1:3000', mapAckToken: 'secret' }, decoded.chunks);
+    expect(calls[0].url).toBe('http://127.0.0.1:3000/plugins/oz---admin-utils/map-ack');
+    expect(calls[0].init?.method).toBe('POST');
+    expect(calls[0].init?.headers).toEqual(expect.objectContaining({ Authorization: 'Bearer secret' }));
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual([{
+      chunkX: 1, chunkZ: 2, updatedAtMs: 1000, contentHash: 'a'.repeat(64),
+    }]);
+  });
   test('uses the game-derived Admin Utils handler path', async () => {
     const calls: string[] = [];
     const source = new NativeMapSource(async (url, init) => {

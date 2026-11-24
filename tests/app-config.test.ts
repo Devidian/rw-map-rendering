@@ -50,6 +50,19 @@ describe('AppConfig', () => {
     expect(AppConfig.renderServers).toEqual([]);
   });
 
+  it('keeps acknowledgement optional and scoped to each configured server', () => {
+    process.env.RENDER_SERVERS_CONFIG_FILE = writeServerConfig([
+      { ip: '127.0.0.1', port: 5255, baseUrl: 'http://127.0.0.1:5254', mapAckToken: 'x'.repeat(32) },
+      { ip: '127.0.0.2', port: 4255, baseUrl: 'http://127.0.0.2:4254' },
+    ]);
+
+    const servers = AppConfig.renderServers;
+    expect(servers).toHaveLength(2);
+    expect(servers[0]).toEqual(expect.objectContaining({ port: 5255, mapAckToken: 'x'.repeat(32) }));
+    expect(servers[1]).toEqual(expect.objectContaining({ port: 4255 }));
+    expect(servers[1].mapAckToken).toBeUndefined();
+  });
+
   it('requires an explicit configuration file', () => {
     delete process.env.RENDER_SERVERS_CONFIG_FILE;
 
