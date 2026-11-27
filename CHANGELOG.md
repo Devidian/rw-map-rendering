@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [0.1.8] - 2026-11-27
+
+- perf: schedule polling independently per server ID so a slow server no longer delays the others. Terrain and satellite polling for the same ID retain their order.
+
 ## [0.1.7] - 2026-11-06
 
 - feat: optionally acknowledge rendered Admin Utils terrain chunks per server after local cache and tile writes.
