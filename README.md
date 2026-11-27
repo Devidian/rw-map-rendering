@@ -17,6 +17,10 @@ after a complete renderer sync and a verified acknowledgement response.
 The acknowledgement contract assumes one authoritative renderer per world;
 other server entries can run without a token or cleanup.
 
+Polling intervals are scheduled independently per server ID. Each server's
+terrain and satellite polls run in sequence, and entries with the same server ID
+are also polled in sequence. A slow server therefore does not delay other IDs.
+
 Experimental satellite images are polled through Admin Utils `sat-changes` and
 `sat-tile` when those routes exist. Images are scaled to the terrain map's
 128 pixels per chunk and stored under `<server-id>/satellite/`. `metadata.json`

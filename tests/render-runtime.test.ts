@@ -1,7 +1,100 @@
 import { MapSourceNotFoundError } from '../src/service/native-map-source.js';
 import { mapRenderPollErrorMessage, RendererRuntime } from '../src/service/render-runtime.js';
+import { jest } from '@jest/globals';
 
 describe('RendererRuntime', () => {
+  it('keeps healthy servers polling while another remains in flight, and stops rescheduling', async () => {
+    jest.useFakeTimers();
+    let resolveSlow!: () => void;
+    const slow = new Promise<void>((resolve) => { resolveSlow = resolve; });
+    const calls: string[] = [];
+    const servers = [
+      { ip: 'slow', port: 4255, baseUrl: 'http://slow' },
+      { ip: 'fast', port: 4255, baseUrl: 'http://fast' },
+    ];
+    const runtime = new RendererRuntime(servers, { pollServer: async (server) => {
+      calls.push(`terrain:${server.ip}`);
+      if (server.ip === 'slow') await slow;
+      return { serverId: server.ip, fetched: 0, rendered: 0 };
+    } }, 100, { pollServer: async (server) => { calls.push(`satellite:${server.ip}`); } });
+    try {
+      runtime.start();
+      await jest.advanceTimersByTimeAsync(0);
+      await jest.advanceTimersByTimeAsync(250);
+      expect(calls.filter((call) => call === 'terrain:slow')).toHaveLength(1);
+      expect(calls.filter((call) => call === 'terrain:fast')).toHaveLength(3);
+      expect(calls.filter((call) => call === 'satellite:fast')).toHaveLength(3);
+      runtime.stop();
+      resolveSlow();
+      await jest.advanceTimersByTimeAsync(500);
+      expect(calls.filter((call) => call === 'terrain:slow')).toHaveLength(1);
+      expect(calls.filter((call) => call === 'terrain:fast')).toHaveLength(3);
+      expect(calls).not.toContain('satellite:slow');
+    } finally {
+      runtime.stop();
+      resolveSlow();
+      jest.useRealTimers();
+    }
+  });
+
+  it('serializes duplicate server identities and keeps terrain before satellite', async () => {
+    jest.useFakeTimers();
+    let release!: () => void;
+    const first = new Promise<void>((resolve) => { release = resolve; });
+    const calls: string[] = [];
+    const servers = [
+      { ip: 'same', port: 4255, baseUrl: 'http://one' },
+      { ip: 'same', port: 4255, baseUrl: 'http://two' },
+    ];
+    const runtime = new RendererRuntime(servers, { pollServer: async (server) => {
+      calls.push(`terrain:${server.baseUrl}`);
+      if (server.baseUrl === 'http://one') await first;
+      return { serverId: server.ip, fetched: 0, rendered: 0 };
+    } }, 100, { pollServer: async (server) => { calls.push(`satellite:${server.baseUrl}`); } });
+    try {
+      runtime.start();
+      await jest.advanceTimersByTimeAsync(200);
+      expect(calls).toEqual(['terrain:http://one']);
+      release();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(calls).toEqual(['terrain:http://one', 'satellite:http://one',
+        'terrain:http://two', 'satellite:http://two']);
+    } finally {
+      runtime.stop();
+      release();
+      jest.useRealTimers();
+    }
+  });
+
+  it('continues to satellite after terrain failure and never overlaps a pending satellite', async () => {
+    jest.useFakeTimers();
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let terrainCalls = 0;
+    let satelliteCalls = 0;
+    const runtime = new RendererRuntime([{ ip: 'one', port: 4255, baseUrl: 'http://one' }], {
+      pollServer: async () => {
+        terrainCalls += 1;
+        if (terrainCalls === 1) throw new Error('injected terrain failure');
+        return { serverId: 'one', fetched: 0, rendered: 0 };
+      },
+    }, 100, { pollServer: async () => { satelliteCalls += 1; await pending; } });
+    try {
+      runtime.start();
+      runtime.start();
+      await jest.advanceTimersByTimeAsync(300);
+      expect(terrainCalls).toBe(1);
+      expect(satelliteCalls).toBe(1);
+      release();
+      await jest.advanceTimersByTimeAsync(100);
+      expect(terrainCalls).toBe(2);
+      expect(satelliteCalls).toBe(2);
+    } finally {
+      runtime.stop();
+      release();
+      jest.useRealTimers();
+    }
+  });
   it('polls each configured game server independently', async () => {
     const called: number[] = [];
     let done!: () => void;

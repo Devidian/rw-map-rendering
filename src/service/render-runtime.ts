@@ -23,8 +23,8 @@ export interface RendererRuntimeStatus {
 }
 
 export class RendererRuntime {
-  private timer: NodeJS.Timeout | undefined;
-  private running = false;
+  private readonly timers = new Set<NodeJS.Timeout>();
+  private started = false;
   private stopped = false;
 
   constructor(
@@ -36,37 +36,49 @@ export class RendererRuntime {
   ) {}
 
   start(): void {
-    if (this.stopped || this.timer) return;
+    if (this.stopped || this.started) return;
     this.publisher?.start(this.servers.map((server) => serverIdFor(server.ip, server.port)));
-    const run = async () => {
-      if (this.running) return;
-      this.running = true;
-      try {
-        await Promise.all(this.servers.map(async (server) => {
+    this.started = true;
+    const groups = new Map<string, RenderServerConfig[]>();
+    for (const server of this.servers) {
+      const serverId = serverIdFor(server.ip, server.port);
+      const group = groups.get(serverId) ?? [];
+      group.push(server);
+      groups.set(serverId, group);
+    }
+    for (const group of groups.values()) {
+      const schedule = (delay: number) => {
+        const timer = setTimeout(() => {
+          this.timers.delete(timer);
+          void run();
+        }, delay);
+        this.timers.add(timer);
+      };
+      const run = async () => {
+        for (const server of group) {
+          if (this.stopped) break;
           try { await this.poller.pollServer(server); }
-          catch (error) { defaultLogger.error('Map render poll failed:', error); }
-          if (this.satellitePoller) {
+          catch (error) {
+            const message = mapRenderPollErrorMessage(error);
+            if (message) defaultLogger.error(message);
+            else defaultLogger.error('Map render poll failed:', error);
+          }
+          if (!this.stopped && this.satellitePoller) {
             try { await this.satellitePoller.pollServer(server); }
             catch (error) { defaultLogger.error('Satellite render poll failed:', error); }
           }
-        }));
-      } catch (error) {
-        const message = mapRenderPollErrorMessage(error);
-        if (message) defaultLogger.error(message);
-        else defaultLogger.error('Map render poll failed:', error);
-      } finally {
-        this.running = false;
-        if (!this.stopped) this.timer = setTimeout(run, this.intervalMs);
-      }
-    };
-    this.timer = setTimeout(run, 0);
+        }
+        if (!this.stopped) schedule(this.intervalMs);
+      };
+      schedule(0);
+    }
   }
 
   stop(): void {
     this.stopped = true;
     this.publisher?.stop();
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = undefined;
+    for (const timer of this.timers) clearTimeout(timer);
+    this.timers.clear();
   }
 
   status(): RendererRuntimeStatus {
