@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [0.1.7] - 2026-11-06
+
+- feat: optionally acknowledge rendered Admin Utils terrain chunks per server after local cache and tile writes.
+- fix: retain cached chunks and tiles across full syncs when acknowledged source rows have already been removed from Admin Utils.
+- docs: document per-server tokens, persistent renderer storage, and the seven-day retention rollout.
+
 ## [0.1.5] - 2026-10-20
 
 - feat: poll optional Admin Utils satellite images and publish a separate satellite tile pyramid when data exists.
